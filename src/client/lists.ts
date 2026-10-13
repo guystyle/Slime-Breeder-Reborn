@@ -7,6 +7,16 @@ import { battleReport, fmtDate, slimeCard } from './views.ts';
 
 const typeName = (n: number) => STAT_KEYS[n]!.toUpperCase();
 
+/** A clearly visible "back" bar for detail pages: previous page if there is one, else the title screen. */
+function backBar(): HTMLElement {
+  const btn = h('button', { type: 'button', class: 'backbtn' }, `← ${t('nav.back')}`);
+  btn.addEventListener('click', () => {
+    if (history.length > 1) history.back();
+    else location.hash = '#/';
+  });
+  return h('div', { class: 'backbar' }, btn);
+}
+
 /** Bottom-frame views: ranking, lineage census, lineage detail, hall of fame, title matches. */
 
 export async function rankView(page: 'a' | 'b' | 'all', focusId?: number): Promise<HTMLElement> {
@@ -68,6 +78,7 @@ export async function lineagesView(): Promise<HTMLElement> {
 
 export function lineageView(d: LineageDetail, token: string | null): HTMLElement {
   const wrap = h('div', {});
+  wrap.append(backBar());
   const name = d.lineage ? t('lin.detail', { name: d.lineage.name, no: d.lineage.no }) : t('lin.none');
   wrap.append(h('h2', { class: 'section-title gold' }, name));
   if (d.fromHall) wrap.append(h('p', { class: 'small' }, t('lin.hallOnly')));

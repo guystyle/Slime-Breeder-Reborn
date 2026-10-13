@@ -354,3 +354,8 @@ details.comments > summary { cursor: pointer; color: #cfc; margin: 6px 0; user-s
   .keep input { width: 22px; height: 22px; }
   .welcome button:not(.mini) { width: 100%; }
 }
+
+/* back bar on detail pages: stays in view while scrolling long lists */
+.backbar { position: sticky; top: 0; z-index: 5; padding: 6px 0; background: linear-gradient(#000 70%, transparent); }
+.backbtn { font-size: 1.05em; padding: 8px 18px; font-weight: bold; }
+@media (max-width: 700px) { .backbtn { width: 100%; padding: 12px 18px; } }
