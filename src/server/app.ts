@@ -1,7 +1,8 @@
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { DEFAULT_COOLDOWN_MIN } from '../shared/ladder.ts';
 import { initSchema } from './db.ts';
-import { Game, GameError } from './service.ts';
+import { Game, GameError, REMEMBER_DAYS } from './service.ts';
 import { openDb } from './store.ts';
 
 /**
@@ -53,6 +54,18 @@ export function sharedGame(): Promise<Game> {
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
+const REMEMBER_COOKIE = 'slime_remember';
+
+/** True behind HTTPS (Vercel terminates TLS and forwards the scheme). */
+const isHttps = (c: Context) => c.req.url.startsWith('https:') || c.req.header('x-forwarded-proto')?.split(',')[0]?.trim() === 'https';
+
+/**
+ * The remember cookie is HttpOnly (scripts cannot read it), SameSite=Lax (not sent on cross-site POSTs)
+ * and Secure over HTTPS. It holds a random token; the server keeps only its hash.
+ */
+const setRemember = (c: Context, token: string) =>
+  setCookie(c, REMEMBER_COOKIE, token, { httpOnly: true, sameSite: 'Lax', secure: isHttps(c), path: '/', maxAge: REMEMBER_DAYS * 86_400 });
+
 export function createApp(getGame: () => Promise<Game> = sharedGame): Hono {
   const app = new Hono();
 
@@ -97,7 +110,30 @@ export function createApp(getGame: () => Promise<Game> = sharedGame): Hono {
 
   app.post('/api/enter', async (c) => {
     const b = await body(c);
-    return c.json(await (await getGame()).enter(str(b.user), str(b.pass)));
+    const { res, remember } = await (await getGame()).enterRemember(str(b.user), str(b.pass), b.remember === true);
+    if (remember) setRemember(c, remember);
+    return c.json(res);
+  });
+
+  // Password-less continuation for a remembered device. POST + JSON so a foreign page cannot trigger it.
+  app.post('/api/resume', async (c) => {
+    await body(c);
+    const token = getCookie(c, REMEMBER_COOKIE) ?? '';
+    try {
+      const res = await (await getGame()).resume(token);
+      setRemember(c, token); // keeps the 90 days rolling
+      return c.json(res);
+    } catch (e) {
+      if (e instanceof GameError && e.code === 'no-login') deleteCookie(c, REMEMBER_COOKIE, { path: '/' });
+      throw e;
+    }
+  });
+  app.get('/api/me', async (c) => c.json({ user: await (await getGame()).whoami(getCookie(c, REMEMBER_COOKIE) ?? '') }));
+  app.post('/api/logout', async (c) => {
+    await body(c);
+    await (await getGame()).forget(getCookie(c, REMEMBER_COOKIE) ?? '');
+    deleteCookie(c, REMEMBER_COOKIE, { path: '/' });
+    return c.json({ ok: true });
   });
   app.post('/api/mate', async (c) => {
     const b = await body(c);

@@ -1,4 +1,4 @@
-import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { type BattleReport, fight } from '../shared/battle.ts';
 import { type ErrorCode, ERROR_TEXT } from '../shared/errors.ts';
 import { type Dna, type Kind, colorOf, eveDna, express, kindOf, mix, mutate } from '../shared/dna.ts';
@@ -30,6 +30,10 @@ export const MAX_PASS = 8;
 export const MAX_SLIME_NAME = 36;
 export const MAX_COMMENT = 300;
 const SESSION_TTL = 3_600_000;
+/** A remembered login lasts this long after its last use. */
+export const REMEMBER_DAYS = 90;
+const MAX_REMEMBERED_DEVICES = 5;
+const hashToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
 /** Eve, the founder every account starts with (values from the original). */
 const EVE_STATS: Stats = { weight: 50, hp: 500, stm: 500, str: 50, dex: 50, agl: 50, cst: 50, sex: 50, spd: 50 };
@@ -270,6 +274,14 @@ export class Game {
   // ---------- account / flow ----------
 
   async enter(userRaw: string, pass: string): Promise<EnterResponse> {
+    return (await this.enterRemember(userRaw, pass, false)).res;
+  }
+
+  /**
+   * Log in (registering a new account on first use). With `remember`, also returns a long-lived
+   * device token to be stored in an HttpOnly cookie, so the password need not be typed again.
+   */
+  async enterRemember(userRaw: string, pass: string, remember: boolean): Promise<{ res: EnterResponse; remember: string | null }> {
     const user = userRaw.trim();
     if (!user || user.length > MAX_USER) throw new GameError('bad-user');
     if (!pass || pass.length > MAX_PASS) throw new GameError('bad-pass');
@@ -284,7 +296,8 @@ export class Game {
       fresh = { salt, hash: await Game.hash(pass, salt) };
     }
 
-    return this.db.tx(async (s) => {
+    let token: string | null = null;
+    const res = await this.db.tx(async (s) => {
       const now = this.now();
       let u = await s.get<UserRow>('SELECT * FROM users WHERE name = ?', [user]);
       let registered = false;
@@ -300,32 +313,86 @@ export class Game {
         throw new GameError('wrong-pass');
       }
 
-      if (!u.pending_id && u.last_play && now - u.last_play < this.cooldownMs) {
-        const left = Math.ceil((this.cooldownMs - (now - u.last_play)) / 60_000);
-        throw new GameError('cooldown', { every: this.cooldownMs / 60_000, left });
-      }
-
-      const token = randomBytes(24).toString('hex');
-      await s.batch([
-        { sql: 'UPDATE users SET last_seen = ? WHERE name = ?', args: [now, user] },
-        { sql: 'INSERT INTO sessions (token, user, created) VALUES (?,?,?)', args: [token, user, now] },
-        { sql: 'DELETE FROM sessions WHERE created < ?', args: [now - SESSION_TTL] },
-      ]);
-
-      const ladder = await this.ladder(s);
-      const avg = this.avgWeight(ladder);
-      const mother = (await this.slime(s, u.mother_id!))!;
-      const pending = u.pending_id ? (await this.slime(s, u.pending_id))! : null;
-      return {
-        ok: true as const,
-        token,
-        registered,
-        phase: pending ? ('fight' as const) : ('mate' as const),
-        mother: this.view(mother, ladder, avg),
-        mates: await this.mates(s, ladder),
-        pending: pending ? this.view(pending, ladder, avg) : null,
-      };
+      const out = await this.openSession(s, u, registered);
+      if (remember) token = await this.issueRemember(s, u.name);
+      return out;
     });
+    return { res, remember: token };
+  }
+
+  /** Continue with a remembered device token (no password). Throws 'no-login' when it is unknown or expired. */
+  async resume(rawToken: string): Promise<EnterResponse> {
+    return this.db.tx(async (s) => {
+      const u = await this.userByRemember(s, rawToken);
+      if (!u) throw new GameError('no-login');
+      return this.openSession(s, u, false);
+    });
+  }
+
+  /** Who a remembered token belongs to, without starting a session (so it works during the cooldown). */
+  async whoami(rawToken: string): Promise<string | null> {
+    if (!rawToken) return null;
+    const u = await this.userByRemember(this.db, rawToken, false);
+    return u?.name ?? null;
+  }
+
+  /** Forget this device. */
+  async forget(rawToken: string): Promise<void> {
+    if (rawToken) await this.db.run('DELETE FROM remember WHERE token_hash = ?', [hashToken(rawToken)]);
+  }
+
+  private async issueRemember(s: Store, user: string): Promise<string> {
+    const raw = randomBytes(32).toString('base64url');
+    const now = this.now();
+    await s.batch([
+      { sql: 'INSERT INTO remember (token_hash, user, created, last_used) VALUES (?,?,?,?)', args: [hashToken(raw), user, now, now] },
+      { sql: 'DELETE FROM remember WHERE last_used < ?', args: [now - REMEMBER_DAYS * DAY] },
+      // only the newest few devices stay logged in
+      {
+        sql: 'DELETE FROM remember WHERE user = ? AND token_hash NOT IN (SELECT token_hash FROM remember WHERE user = ? ORDER BY last_used DESC LIMIT ?)',
+        args: [user, user, MAX_REMEMBERED_DEVICES],
+      },
+    ]);
+    return raw;
+  }
+
+  private async userByRemember(s: Store, rawToken: string, touch = true): Promise<UserRow | undefined> {
+    if (!rawToken || rawToken.length > 200) return undefined;
+    const now = this.now();
+    const row = await s.get<{ user: string; last_used: number }>('SELECT user, last_used FROM remember WHERE token_hash = ?', [hashToken(rawToken)]);
+    if (!row || now - row.last_used > REMEMBER_DAYS * DAY) return undefined;
+    const u = await s.get<UserRow>('SELECT * FROM users WHERE name = ?', [row.user]);
+    if (u && touch) await s.run('UPDATE remember SET last_used = ? WHERE token_hash = ?', [now, hashToken(rawToken)]);
+    return u;
+  }
+
+  /** After authentication: enforce the wait between plays, start a session and assemble the play screen. */
+  private async openSession(s: Store, u: UserRow, registered: boolean): Promise<EnterResponse> {
+    const now = this.now();
+    if (!u.pending_id && u.last_play && now - u.last_play < this.cooldownMs) {
+      const leftMs = this.cooldownMs - (now - u.last_play);
+      throw new GameError('cooldown', { every: this.cooldownMs / 60_000, left: Math.ceil(leftMs / 60_000), leftSec: Math.ceil(leftMs / 1000) });
+    }
+    const token = randomBytes(24).toString('hex');
+    await s.batch([
+      { sql: 'UPDATE users SET last_seen = ? WHERE name = ?', args: [now, u.name] },
+      { sql: 'INSERT INTO sessions (token, user, created) VALUES (?,?,?)', args: [token, u.name, now] },
+      { sql: 'DELETE FROM sessions WHERE created < ?', args: [now - SESSION_TTL] },
+    ]);
+
+    const ladder = await this.ladder(s);
+    const avg = this.avgWeight(ladder);
+    const mother = (await this.slime(s, u.mother_id!))!;
+    const pending = u.pending_id ? (await this.slime(s, u.pending_id))! : null;
+    return {
+      ok: true as const,
+      token,
+      registered,
+      phase: pending ? ('fight' as const) : ('mate' as const),
+      mother: this.view(mother, ladder, avg),
+      mates: await this.mates(s, ladder),
+      pending: pending ? this.view(pending, ladder, avg) : null,
+    };
   }
 
   /** Slimes on the ladder with seeds left, plus Hall of Fame legends whose lineage has died out of the ranking. */
@@ -684,6 +751,7 @@ export class Game {
       for (const { name } of gone) {
         stmts.push({ sql: 'DELETE FROM slimes WHERE owner = ? AND ranked = 0 AND hall = 0', args: [name] });
         stmts.push({ sql: 'DELETE FROM sessions WHERE user = ?', args: [name] });
+        stmts.push({ sql: 'DELETE FROM remember WHERE user = ?', args: [name] });
         stmts.push({ sql: 'DELETE FROM users WHERE name = ?', args: [name] });
       }
       await s.batch(stmts);

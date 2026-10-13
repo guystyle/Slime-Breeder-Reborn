@@ -2633,7 +2633,7 @@ var require_extension = __commonJS({
       if (dest[name] === void 0) dest[name] = [elem];
       else dest[name].push(elem);
     }
-    function parse(header) {
+    function parse2(header) {
       const offers = /* @__PURE__ */ Object.create(null);
       let params = /* @__PURE__ */ Object.create(null);
       let mustUnescape = false;
@@ -2773,7 +2773,7 @@ var require_extension = __commonJS({
         }).join(", ");
       }).join(", ");
     }
-    module.exports = { format, parse };
+    module.exports = { format, parse: parse2 };
   }
 });
 
@@ -2786,7 +2786,7 @@ var require_websocket = __commonJS({
     var http = __require("http");
     var net = __require("net");
     var tls = __require("tls");
-    var { randomBytes: randomBytes2, createHash } = __require("crypto");
+    var { randomBytes: randomBytes2, createHash: createHash2 } = __require("crypto");
     var { Duplex, Readable: Readable2 } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -2807,7 +2807,7 @@ var require_websocket = __commonJS({
     var {
       EventTarget: { addEventListener: addEventListener2, removeEventListener }
     } = require_event_target();
-    var { format, parse } = require_extension();
+    var { format, parse: parse2 } = require_extension();
     var { toBuffer } = require_buffer_util();
     var kAborted = /* @__PURE__ */ Symbol("kAborted");
     var protocolVersions = [8, 13];
@@ -3467,7 +3467,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key2 + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key2 + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -3497,7 +3497,7 @@ var require_websocket = __commonJS({
           }
           let extensions;
           try {
-            extensions = parse(secWebSocketExtensions);
+            extensions = parse2(secWebSocketExtensions);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Extensions header";
             abortHandshake(websocket, socket, message);
@@ -3789,7 +3789,7 @@ var require_subprotocol = __commonJS({
   "node_modules/ws/lib/subprotocol.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
-    function parse(header) {
+    function parse2(header) {
       const protocols = /* @__PURE__ */ new Set();
       let start = -1;
       let end = -1;
@@ -3825,7 +3825,7 @@ var require_subprotocol = __commonJS({
       protocols.add(protocol);
       return protocols;
     }
-    module.exports = { parse };
+    module.exports = { parse: parse2 };
   }
 });
 
@@ -3836,7 +3836,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter = __require("events");
     var http = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash } = __require("crypto");
+    var { createHash: createHash2 } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -4143,7 +4143,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash("sha1").update(key2 + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key2 + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -11868,6 +11868,128 @@ var Hono3 = class extends Hono {
   }
 };
 
+// node_modules/hono/dist/utils/cookie.js
+var validCookieNameRegEx = /^[\w!#$%&'*.^`|~+-]+$/;
+var relaxedCookieNameRegEx = /^[!#-:<>-[\]-~]+$/;
+var validCookieValueRegEx = /^[ !#-:<-[\]-~]*$/;
+var trimCookieWhitespace = (value) => {
+  let start = 0;
+  let end = value.length;
+  while (start < end) {
+    const charCode = value.charCodeAt(start);
+    if (charCode !== 32 && charCode !== 9) break;
+    start++;
+  }
+  while (end > start) {
+    const charCode = value.charCodeAt(end - 1);
+    if (charCode !== 32 && charCode !== 9) break;
+    end--;
+  }
+  return start === 0 && end === value.length ? value : value.slice(start, end);
+};
+var parse = (cookie, name) => {
+  if (name && cookie.indexOf(name) === -1) return {};
+  const pairs = cookie.split(";");
+  const parsedCookie = /* @__PURE__ */ Object.create(null);
+  for (const pairStr of pairs) {
+    const valueStartPos = pairStr.indexOf("=");
+    if (valueStartPos === -1) continue;
+    const cookieName = trimCookieWhitespace(pairStr.substring(0, valueStartPos));
+    if (name && name !== cookieName || !relaxedCookieNameRegEx.test(cookieName) || cookieName in parsedCookie) continue;
+    let cookieValue = trimCookieWhitespace(pairStr.substring(valueStartPos + 1));
+    if (cookieValue.startsWith('"') && cookieValue.endsWith('"')) cookieValue = cookieValue.slice(1, -1);
+    if (validCookieValueRegEx.test(cookieValue)) {
+      parsedCookie[cookieName] = tryDecodeURIComponent(cookieValue);
+      if (name) break;
+    }
+  }
+  return parsedCookie;
+};
+var _serialize = (name, value, opt = {}) => {
+  if (!validCookieNameRegEx.test(name)) throw new Error("Invalid cookie name");
+  let cookie = `${name}=${value}`;
+  if (name.startsWith("__Secure-") && !opt.secure) throw new Error("__Secure- Cookie must have Secure attributes");
+  if (name.startsWith("__Host-")) {
+    if (!opt.secure) throw new Error("__Host- Cookie must have Secure attributes");
+    if (opt.path !== "/") throw new Error('__Host- Cookie must have Path attributes with "/"');
+    if (opt.domain) throw new Error("__Host- Cookie must not have Domain attributes");
+  }
+  for (const key2 of [
+    "domain",
+    "path",
+    "sameSite",
+    "priority"
+  ]) if (opt[key2] && /[;\r\n]/.test(opt[key2])) throw new Error(`${key2} must not contain ";", "\\r", or "\\n"`);
+  if (opt && typeof opt.maxAge === "number" && opt.maxAge >= 0) {
+    if (opt.maxAge > 3456e4) throw new Error("Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.");
+    cookie += `; Max-Age=${opt.maxAge | 0}`;
+  }
+  if (opt.domain && opt.prefix !== "host") cookie += `; Domain=${opt.domain}`;
+  if (opt.path) cookie += `; Path=${opt.path}`;
+  if (opt.expires) {
+    if (opt.expires.getTime() - Date.now() > 3456e7) throw new Error("Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.");
+    cookie += `; Expires=${opt.expires.toUTCString()}`;
+  }
+  if (opt.httpOnly) cookie += "; HttpOnly";
+  if (opt.secure) cookie += "; Secure";
+  if (opt.sameSite) cookie += `; SameSite=${opt.sameSite.charAt(0).toUpperCase() + opt.sameSite.slice(1)}`;
+  if (opt.priority) cookie += `; Priority=${opt.priority.charAt(0).toUpperCase() + opt.priority.slice(1)}`;
+  if (opt.partitioned) {
+    if (!opt.secure) throw new Error("Partitioned Cookie must have Secure attributes");
+    cookie += "; Partitioned";
+  }
+  return cookie;
+};
+var serialize = (name, value, opt) => {
+  value = encodeURIComponent(value);
+  return _serialize(name, value, opt);
+};
+
+// node_modules/hono/dist/helper/cookie/index.js
+var getCookie = (c, key2, prefix) => {
+  const cookie = c.req.raw.headers.get("Cookie");
+  if (typeof key2 === "string") {
+    if (!cookie) return;
+    let finalKey = key2;
+    if (prefix === "secure") finalKey = "__Secure-" + key2;
+    else if (prefix === "host") finalKey = "__Host-" + key2;
+    return parse(cookie, finalKey)[finalKey];
+  }
+  if (!cookie) return {};
+  return parse(cookie);
+};
+var generateCookie = (name, value, opt) => {
+  let cookie;
+  if (opt?.prefix === "secure") cookie = serialize("__Secure-" + name, value, {
+    path: "/",
+    ...opt,
+    secure: true
+  });
+  else if (opt?.prefix === "host") cookie = serialize("__Host-" + name, value, {
+    ...opt,
+    path: "/",
+    secure: true,
+    domain: void 0
+  });
+  else cookie = serialize(name, value, {
+    path: "/",
+    ...opt
+  });
+  return cookie;
+};
+var setCookie = (c, name, value, opt) => {
+  const cookie = generateCookie(name, value, opt);
+  c.header("Set-Cookie", cookie, { append: true });
+};
+var deleteCookie = (c, name, opt) => {
+  const deletedCookie = getCookie(c, name, opt?.prefix);
+  setCookie(c, name, "", {
+    ...opt,
+    maxAge: 0
+  });
+  return deletedCookie;
+};
+
 // src/shared/ladder.ts
 var RANK_SIZE = 50;
 var ALWAYS_FOUGHT = 3;
@@ -11878,7 +12000,7 @@ function cutLength(lowestPoints) {
 }
 var scalePoints = (points, cut) => Math.trunc(points / 10 ** cut);
 var mustFight = (rank, opponentPoints, challengerPoints) => opponentPoints >= challengerPoints || rank <= ALWAYS_FOUGHT;
-var DEFAULT_COOLDOWN_MIN = 3;
+var DEFAULT_COOLDOWN_MIN = 1;
 
 // src/server/db.ts
 var SCHEMA_VERSION = 3;
@@ -11893,6 +12015,12 @@ var TABLES = [
     last_seen INTEGER NOT NULL,
     mother_id INTEGER,
     pending_id INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS remember (
+    token_hash TEXT PRIMARY KEY,
+    user TEXT NOT NULL,
+    created INTEGER NOT NULL,
+    last_used INTEGER NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
@@ -11966,7 +12094,7 @@ async function initSchema(db) {
 }
 
 // src/server/service.ts
-import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 
 // src/shared/battle.ts
 var MAX_STEPS = 2e5;
@@ -12078,8 +12206,9 @@ var ERROR_TEXT = {
   "bad-user": "Username must be 1-32 characters.",
   "bad-pass": "Password must be 1-8 characters.",
   "wrong-pass": "Wrong password.",
-  cooldown: "You can play once per {every} minutes. Try again in {left} min.",
+  cooldown: "You can play once per {every} min. Try again in {left} min.",
   session: "Session expired. Please log in again.",
+  "no-login": "You are not logged in.",
   "no-account": "Account not found.",
   pending: "You already have a newborn waiting to fight.",
   "not-ranked": "That slime is not available as a mate.",
@@ -12318,6 +12447,9 @@ var MAX_PASS = 8;
 var MAX_SLIME_NAME = 36;
 var MAX_COMMENT = 300;
 var SESSION_TTL = 36e5;
+var REMEMBER_DAYS = 90;
+var MAX_REMEMBERED_DEVICES = 5;
+var hashToken = (raw2) => createHash("sha256").update(raw2).digest("hex");
 var EVE_STATS = { weight: 50, hp: 500, stm: 500, str: 50, dex: 50, agl: 50, cst: 50, sex: 50, spd: 50 };
 var GameError = class extends Error {
   constructor(code, params = {}) {
@@ -12483,6 +12615,13 @@ var Game = class _Game {
   }
   // ---------- account / flow ----------
   async enter(userRaw, pass) {
+    return (await this.enterRemember(userRaw, pass, false)).res;
+  }
+  /**
+   * Log in (registering a new account on first use). With `remember`, also returns a long-lived
+   * device token to be stored in an HttpOnly cookie, so the password need not be typed again.
+   */
+  async enterRemember(userRaw, pass, remember) {
     const user = userRaw.trim();
     if (!user || user.length > MAX_USER) throw new GameError("bad-user");
     if (!pass || pass.length > MAX_PASS) throw new GameError("bad-pass");
@@ -12494,7 +12633,8 @@ var Game = class _Game {
       const salt = randomBytes(16).toString("hex");
       fresh = { salt, hash: await _Game.hash(pass, salt) };
     }
-    return this.db.tx(async (s) => {
+    let token = null;
+    const res = await this.db.tx(async (s) => {
       const now = this.now();
       let u = await s.get("SELECT * FROM users WHERE name = ?", [user]);
       let registered = false;
@@ -12507,30 +12647,79 @@ var Game = class _Game {
       } else if (fresh) {
         throw new GameError("wrong-pass");
       }
-      if (!u.pending_id && u.last_play && now - u.last_play < this.cooldownMs) {
-        const left = Math.ceil((this.cooldownMs - (now - u.last_play)) / 6e4);
-        throw new GameError("cooldown", { every: this.cooldownMs / 6e4, left });
-      }
-      const token = randomBytes(24).toString("hex");
-      await s.batch([
-        { sql: "UPDATE users SET last_seen = ? WHERE name = ?", args: [now, user] },
-        { sql: "INSERT INTO sessions (token, user, created) VALUES (?,?,?)", args: [token, user, now] },
-        { sql: "DELETE FROM sessions WHERE created < ?", args: [now - SESSION_TTL] }
-      ]);
-      const ladder = await this.ladder(s);
-      const avg = this.avgWeight(ladder);
-      const mother = await this.slime(s, u.mother_id);
-      const pending = u.pending_id ? await this.slime(s, u.pending_id) : null;
-      return {
-        ok: true,
-        token,
-        registered,
-        phase: pending ? "fight" : "mate",
-        mother: this.view(mother, ladder, avg),
-        mates: await this.mates(s, ladder),
-        pending: pending ? this.view(pending, ladder, avg) : null
-      };
+      const out = await this.openSession(s, u, registered);
+      if (remember) token = await this.issueRemember(s, u.name);
+      return out;
     });
+    return { res, remember: token };
+  }
+  /** Continue with a remembered device token (no password). Throws 'no-login' when it is unknown or expired. */
+  async resume(rawToken) {
+    return this.db.tx(async (s) => {
+      const u = await this.userByRemember(s, rawToken);
+      if (!u) throw new GameError("no-login");
+      return this.openSession(s, u, false);
+    });
+  }
+  /** Who a remembered token belongs to, without starting a session (so it works during the cooldown). */
+  async whoami(rawToken) {
+    if (!rawToken) return null;
+    const u = await this.userByRemember(this.db, rawToken, false);
+    return u?.name ?? null;
+  }
+  /** Forget this device. */
+  async forget(rawToken) {
+    if (rawToken) await this.db.run("DELETE FROM remember WHERE token_hash = ?", [hashToken(rawToken)]);
+  }
+  async issueRemember(s, user) {
+    const raw2 = randomBytes(32).toString("base64url");
+    const now = this.now();
+    await s.batch([
+      { sql: "INSERT INTO remember (token_hash, user, created, last_used) VALUES (?,?,?,?)", args: [hashToken(raw2), user, now, now] },
+      { sql: "DELETE FROM remember WHERE last_used < ?", args: [now - REMEMBER_DAYS * DAY] },
+      // only the newest few devices stay logged in
+      {
+        sql: "DELETE FROM remember WHERE user = ? AND token_hash NOT IN (SELECT token_hash FROM remember WHERE user = ? ORDER BY last_used DESC LIMIT ?)",
+        args: [user, user, MAX_REMEMBERED_DEVICES]
+      }
+    ]);
+    return raw2;
+  }
+  async userByRemember(s, rawToken, touch = true) {
+    if (!rawToken || rawToken.length > 200) return void 0;
+    const now = this.now();
+    const row = await s.get("SELECT user, last_used FROM remember WHERE token_hash = ?", [hashToken(rawToken)]);
+    if (!row || now - row.last_used > REMEMBER_DAYS * DAY) return void 0;
+    const u = await s.get("SELECT * FROM users WHERE name = ?", [row.user]);
+    if (u && touch) await s.run("UPDATE remember SET last_used = ? WHERE token_hash = ?", [now, hashToken(rawToken)]);
+    return u;
+  }
+  /** After authentication: enforce the wait between plays, start a session and assemble the play screen. */
+  async openSession(s, u, registered) {
+    const now = this.now();
+    if (!u.pending_id && u.last_play && now - u.last_play < this.cooldownMs) {
+      const leftMs = this.cooldownMs - (now - u.last_play);
+      throw new GameError("cooldown", { every: this.cooldownMs / 6e4, left: Math.ceil(leftMs / 6e4), leftSec: Math.ceil(leftMs / 1e3) });
+    }
+    const token = randomBytes(24).toString("hex");
+    await s.batch([
+      { sql: "UPDATE users SET last_seen = ? WHERE name = ?", args: [now, u.name] },
+      { sql: "INSERT INTO sessions (token, user, created) VALUES (?,?,?)", args: [token, u.name, now] },
+      { sql: "DELETE FROM sessions WHERE created < ?", args: [now - SESSION_TTL] }
+    ]);
+    const ladder = await this.ladder(s);
+    const avg = this.avgWeight(ladder);
+    const mother = await this.slime(s, u.mother_id);
+    const pending = u.pending_id ? await this.slime(s, u.pending_id) : null;
+    return {
+      ok: true,
+      token,
+      registered,
+      phase: pending ? "fight" : "mate",
+      mother: this.view(mother, ladder, avg),
+      mates: await this.mates(s, ladder),
+      pending: pending ? this.view(pending, ladder, avg) : null
+    };
   }
   /** Slimes on the ladder with seeds left, plus Hall of Fame legends whose lineage has died out of the ranking. */
   async mates(s, ladder) {
@@ -12848,6 +13037,7 @@ var Game = class _Game {
       for (const { name } of gone) {
         stmts.push({ sql: "DELETE FROM slimes WHERE owner = ? AND ranked = 0 AND hall = 0", args: [name] });
         stmts.push({ sql: "DELETE FROM sessions WHERE user = ?", args: [name] });
+        stmts.push({ sql: "DELETE FROM remember WHERE user = ?", args: [name] });
         stmts.push({ sql: "DELETE FROM users WHERE name = ?", args: [name] });
       }
       await s.batch(stmts);
@@ -12945,6 +13135,9 @@ function sharedGame() {
   return shared;
 }
 var str = (v) => typeof v === "string" ? v : "";
+var REMEMBER_COOKIE = "slime_remember";
+var isHttps = (c) => c.req.url.startsWith("https:") || c.req.header("x-forwarded-proto")?.split(",")[0]?.trim() === "https";
+var setRemember = (c, token) => setCookie(c, REMEMBER_COOKIE, token, { httpOnly: true, sameSite: "Lax", secure: isHttps(c), path: "/", maxAge: REMEMBER_DAYS * 86400 });
 function createApp(getGame = sharedGame) {
   const app2 = new Hono3();
   const body = async (c) => {
@@ -12982,7 +13175,28 @@ function createApp(getGame = sharedGame) {
   });
   app2.post("/api/enter", async (c) => {
     const b = await body(c);
-    return c.json(await (await getGame()).enter(str(b.user), str(b.pass)));
+    const { res, remember } = await (await getGame()).enterRemember(str(b.user), str(b.pass), b.remember === true);
+    if (remember) setRemember(c, remember);
+    return c.json(res);
+  });
+  app2.post("/api/resume", async (c) => {
+    await body(c);
+    const token = getCookie(c, REMEMBER_COOKIE) ?? "";
+    try {
+      const res = await (await getGame()).resume(token);
+      setRemember(c, token);
+      return c.json(res);
+    } catch (e) {
+      if (e instanceof GameError && e.code === "no-login") deleteCookie(c, REMEMBER_COOKIE, { path: "/" });
+      throw e;
+    }
+  });
+  app2.get("/api/me", async (c) => c.json({ user: await (await getGame()).whoami(getCookie(c, REMEMBER_COOKIE) ?? "") }));
+  app2.post("/api/logout", async (c) => {
+    await body(c);
+    await (await getGame()).forget(getCookie(c, REMEMBER_COOKIE) ?? "");
+    deleteCookie(c, REMEMBER_COOKIE, { path: "/" });
+    return c.json({ ok: true });
   });
   app2.post("/api/mate", async (c) => {
     const b = await body(c);

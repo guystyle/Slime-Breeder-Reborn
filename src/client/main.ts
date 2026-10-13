@@ -17,6 +17,10 @@ let session: Session | null = null;
 /** Content that replaces the routed bottom view (a fight in progress or its result) until the route changes. */
 let bottomOverride: HTMLElement | null = null;
 let banner = '';
+/** The remembered account on this device (from the HttpOnly cookie) and when its next play is allowed. */
+let identity: string | null = null;
+let waitUntil = 0;
+let tickTimer: number | undefined;
 
 const app = document.getElementById('app')!;
 const root = document.documentElement;
@@ -185,16 +189,84 @@ async function ticker(): Promise<HTMLElement> {
 
 const field = (label: string, input: HTMLElement) => h('label', { class: 'field' }, h('span', {}, label), input);
 
+const fmtWait = (ms: number) => {
+  const sec = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+};
+
+/** "Welcome back" panel for a remembered device: continue (when the wait is over) or log out. */
+function rememberedPanel(user: string, err: HTMLElement): HTMLElement {
+  const goBtn = h('button', { type: 'button' }, t('login.continue'));
+  const timer = h('div', { class: 'banner' });
+  const refresh = () => {
+    const left = waitUntil - Date.now();
+    timer.hidden = left <= 0;
+    goBtn.disabled = left > 0;
+    if (left > 0) timer.textContent = t('login.waitFor', { time: fmtWait(left) });
+    return left;
+  };
+  const tick = () => {
+    if (refresh() <= 0) {
+      clearInterval(tickTimer);
+      void tryResume(); // the wait is over: go straight on
+    }
+  };
+  clearInterval(tickTimer);
+  if (refresh() > 0) tickTimer = window.setInterval(tick, 1000);
+  goBtn.addEventListener('click', () => void guarded(goBtn, err, async () => {
+    if (!(await tryResume(err))) goBtn.disabled = false;
+  })());
+  const out = h('button', { type: 'button', class: 'mini' }, t('login.logout'));
+  out.addEventListener('click', async () => {
+    try {
+      await api.logout();
+    } catch {
+      /* the cookie is cleared server side when possible; either way show the login form */
+    }
+    identity = null;
+    waitUntil = 0;
+    session = null;
+    renderTop();
+  });
+  return h('div', { class: 'welcome' }, h('div', { class: 'who2' }, t('login.welcome', { user })), timer, h('div', { class: 'row center' }, goBtn), out);
+}
+
+/**
+ * Try to continue as the remembered account. Returns true when a play screen opened;
+ * during the wait it records the remaining time instead.
+ */
+async function tryResume(err?: HTMLElement): Promise<boolean> {
+  try {
+    session = await api.resume();
+    waitUntil = 0;
+    banner = '';
+    renderTop();
+    return true;
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'cooldown') {
+      waitUntil = Date.now() + Number(e.params.leftSec ?? 0) * 1000;
+      renderTop();
+    } else if (e instanceof ApiError && e.code === 'no-login') {
+      identity = null;
+      renderTop();
+    } else if (err) showError(err, e);
+    return false;
+  }
+}
+
 async function titleTop(): Promise<HTMLElement> {
   const user = h('input', { type: 'text', size: 16, maxlength: 32, autocomplete: 'username', autocapitalize: 'none', enterkeyhint: 'next' });
   const pass = h('input', { type: 'password', size: 8, maxlength: 8, autocomplete: 'current-password', enterkeyhint: 'go' });
+  const keep = h('input', { type: 'checkbox', checked: true });
   const err = errorBox();
   const btn = h('button', { type: 'submit' }, t('login.enter'));
-  const form = h('form', { class: 'login' }, field(t('login.user'), user), field(t('login.pass'), pass), btn);
+  const form = h('form', { class: 'login' }, field(t('login.user'), user), field(t('login.pass'), pass), h('label', { class: 'keep' }, keep, ' ', t('login.remember')), btn);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     void guarded(btn, err, async () => {
-      session = await api.enter(user.value, pass.value);
+      const entered = await api.enter(user.value, pass.value, keep.checked);
+      session = entered;
+      if (keep.checked) identity = entered.mother.owner;
       banner = '';
       renderTop();
     })();
@@ -223,7 +295,9 @@ async function titleTop(): Promise<HTMLElement> {
     })();
   });
 
-  const stage = h('div', { class: 'stage' }, logo(), form, err, banner ? h('div', { class: 'banner' }, banner) : '', h('small', {}, t('login.note')));
+  const stage = identity
+    ? h('div', { class: 'stage' }, logo(), rememberedPanel(identity, err), err)
+    : h('div', { class: 'stage' }, logo(), form, err, banner ? h('div', { class: 'banner' }, banner) : '', h('small', {}, t('login.note')));
   const comments = h('details', { class: 'comments', ...(isMobile() ? {} : { open: true }) }, summary, cForm, cErr, list);
   const out = h('div', {}, await ticker(), stage, comments);
   void loadComments().catch(() => undefined);
@@ -301,7 +375,8 @@ function fightTop(s: Session): HTMLElement {
       const r = await api.fight(token, name.value);
       // the form stays up as the "born" card; results play in the bottom frame
       session = null;
-      banner = settings.cooldownMin > 0 ? t('result.again', { n: settings.cooldownMin }) : '';
+      banner = !identity && settings.cooldownMin > 0 ? t('result.again', { n: settings.cooldownMin }) : '';
+      if (identity && settings.cooldownMin > 0) waitUntil = Date.now() + settings.cooldownMin * 60_000;
       await playResults(r);
     })();
   });
@@ -446,4 +521,13 @@ function installErrorReporter() {
 document.documentElement.lang = getLang();
 installErrorReporter();
 startAmbient();
-void loadSettings().finally(renderAll);
+void (async () => {
+  await loadSettings();
+  try {
+    identity = (await api.me()).user;
+  } catch {
+    identity = null;
+  }
+  renderAll();
+  if (identity) void tryResume(); // a remembered device goes straight to the play screen
+})();

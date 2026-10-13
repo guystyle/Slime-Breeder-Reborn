@@ -342,3 +342,14 @@ details.comments > summary { cursor: pointer; color: #cfc; margin: 6px 0; user-s
 }
 
 .jserror { position: fixed; left: 8px; right: 8px; top: 8px; z-index: 100; background: #400; color: #fcc; border: 1px solid #f66; padding: 6px 10px; font-size: 13px; word-break: break-all; }
+
+.keep { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; color: #cfc; }
+.keep input { width: 1.1em; height: 1.1em; min-height: 0; }
+.welcome { margin: 6px 0; }
+.who2 { font-size: 1.15em; margin: 6px 0; text-shadow: 0 0 8px #7ff6; }
+.row.center { justify-content: center; }
+@media (max-width: 700px) {
+  .keep { justify-content: center; padding: 6px 0; }
+  .keep input { width: 22px; height: 22px; }
+  .welcome button:not(.mini) { width: 100%; }
+}

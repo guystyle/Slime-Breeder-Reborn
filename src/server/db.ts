@@ -15,6 +15,12 @@ const TABLES = [
     mother_id INTEGER,
     pending_id INTEGER
   )`,
+  `CREATE TABLE IF NOT EXISTS remember (
+    token_hash TEXT PRIMARY KEY,
+    user TEXT NOT NULL,
+    created INTEGER NOT NULL,
+    last_used INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     user TEXT NOT NULL,

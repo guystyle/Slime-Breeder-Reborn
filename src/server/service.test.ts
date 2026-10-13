@@ -53,7 +53,7 @@ describe('Game', () => {
     await g.fight(resumed.token, 'Blob');
 
     t += 5 * 60_000;
-    await expect(g.enter('alice', 'pw')).rejects.toThrow(/once per 15 minutes/);
+    await expect(g.enter('alice', 'pw')).rejects.toThrow(/once per 15 min\./);
     t += 11 * 60_000;
     expect((await g.enter('alice', 'pw')).ok).toBe(true);
   });

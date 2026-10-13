@@ -28,4 +28,4 @@ export const mustFight = (rank: number, opponentPoints: number, challengerPoints
  * to spare its CGI server; a hosted database copes with far more, so this is shorter and configurable
  * (SLIME_COOLDOWN_MIN, 0 = no waiting).
  */
-export const DEFAULT_COOLDOWN_MIN = 3;
+export const DEFAULT_COOLDOWN_MIN = 1;

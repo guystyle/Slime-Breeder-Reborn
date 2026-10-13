@@ -50,7 +50,11 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export const api = {
-  enter: (user: string, pass: string) => call<EnterResponse & { ok: true }>('/api/enter', { user, pass }),
+  enter: (user: string, pass: string, remember = false) => call<EnterResponse & { ok: true }>('/api/enter', { user, pass, remember }),
+  /** Continue with the remembered device (HttpOnly cookie); rejects with code 'no-login' or 'cooldown'. */
+  resume: () => call<EnterResponse & { ok: true }>('/api/resume', {}),
+  me: () => call<{ user: string | null }>('/api/me'),
+  logout: () => call<{ ok: true }>('/api/logout', {}),
   mate: (token: string, sel: number | 'no') => call<MateResponse>('/api/mate', { token, sel }),
   fight: (token: string, name: string) => call<FightResponse>('/api/fight', { token, name }),
   rank: () => call<{ slimes: SlimeView[] }>('/api/rank'),

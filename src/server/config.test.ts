@@ -54,13 +54,13 @@ describe('health endpoint', () => {
 });
 
 describe('play interval setting', () => {
-  it('defaults to 3 minutes and accepts 0 or other values', async () => {
+  it('defaults to 1 minute and accepts 0 or other values', async () => {
     const { cooldownFromEnv } = await import('./app.ts');
-    expect(cooldownFromEnv({})).toBe(3);
+    expect(cooldownFromEnv({})).toBe(1);
     expect(cooldownFromEnv({ SLIME_COOLDOWN_MIN: '0' })).toBe(0);
     expect(cooldownFromEnv({ SLIME_COOLDOWN_MIN: ' 2 ' })).toBe(2);
-    expect(cooldownFromEnv({ SLIME_COOLDOWN_MIN: 'abc' })).toBe(3);
-    expect(cooldownFromEnv({ SLIME_COOLDOWN_MIN: '-3' })).toBe(3);
+    expect(cooldownFromEnv({ SLIME_COOLDOWN_MIN: 'abc' })).toBe(1);
+    expect(cooldownFromEnv({ SLIME_COOLDOWN_MIN: '-3' })).toBe(1);
   });
 
   it('is reported to clients by /api/config', async () => {
@@ -69,17 +69,17 @@ describe('play interval setting', () => {
     expect(((await res.json()) as { cooldownMin: number }).cooldownMin).toBe(7);
   });
 
-  it('a game without an explicit value waits 3 minutes between plays', async () => {
+  it('a game without an explicit value waits 1 minute between plays', async () => {
     let t = 1_000_000;
     const { g } = await makeGame({ cooldownMin: undefined, now: () => t, rng: seeded(3) });
-    expect(g.cooldownMin).toBe(3);
+    expect(g.cooldownMin).toBe(1);
     const e = await g.enter('quick', 'pw');
     if (!e.ok) throw new Error('enter');
     await g.mate(e.token, e.mates[0]!.id);
     await g.fight(e.token, 'Q');
-    t += 2 * 60_000;
-    await expect(g.enter('quick', 'pw')).rejects.toThrow(/once per 3 minutes/);
-    t += 2 * 60_000;
+    t += 30_000;
+    await expect(g.enter('quick', 'pw')).rejects.toThrow(/once per 1 min/);
+    t += 40_000;
     await expect(g.enter('quick', 'pw')).resolves.toBeTruthy();
   });
 });
