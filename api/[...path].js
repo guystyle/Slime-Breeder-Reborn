@@ -12360,7 +12360,9 @@ function inherit(mother, father2, newNo, rng) {
   if (!father2) seen.add("");
   return { blood, variety: seen.size };
 }
-var symbol = (v) => v >= 1.4 ? String(v * 100 - 100) : v >= 1.35 ? "\u221E" : v >= 1.3 ? "\u266A" : v >= 1.25 ? "\u2605" : v >= 1.2 ? "\u2606" : v >= 1.15 ? "\u25CE" : v >= 1.1 ? "\u25CB" : v >= 1.05 ? "\u25B3" : "\xD7";
+var percent = (v) => String(Number((v * 100 - 100).toPrecision(15)));
+var tidyPrint = (print) => print.replace(/\d+\.\d{6,}|\d{3,}/g, (m) => String(Number(Number(m).toPrecision(15)))).replace(/(\d+)\.0+(?!\d)/g, "$1");
+var symbol = (v) => v >= 1.4 ? percent(v) : v >= 1.35 ? "\u221E" : v >= 1.3 ? "\u266A" : v >= 1.25 ? "\u2605" : v >= 1.2 ? "\u2606" : v >= 1.15 ? "\u25CE" : v >= 1.1 ? "\u25CB" : v >= 1.05 ? "\u25B3" : "\xD7";
 function nixOf(blood, variety) {
   const [b10, b11, b12, b13] = blood;
   const list = [];
@@ -12568,7 +12570,7 @@ var Game = class _Game {
       color: row.color,
       kind: row.kind,
       lineage: bloodOf(row),
-      nix: row.nix,
+      nix: tidyPrint(row.nix),
       px: spriteSize(stats.weight, avg),
       seeds: row.seeds,
       children: row.children,

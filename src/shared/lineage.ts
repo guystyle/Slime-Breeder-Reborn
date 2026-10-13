@@ -70,8 +70,14 @@ export interface Nix {
   print: string;
 }
 
+/** Perl prints numbers with 15 significant digits, so 1.5 * 100 - 100 shows as "50"; JS would show 50.00000000000006. */
+export const percent = (v: number) => String(Number((v * 100 - 100).toPrecision(15)));
+
+/** Tidy a stored print: slimes born before the fix have strings like "××50.0000000000000060○×△". */
+export const tidyPrint = (print: string) => print.replace(/\d+\.\d{6,}|\d{3,}/g, (m) => String(Number(Number(m).toPrecision(15)))).replace(/(\d+)\.0+(?!\d)/g, '$1');
+
 const symbol = (v: number) =>
-  v >= 1.4 ? String(v * 100 - 100) : v >= 1.35 ? '∞' : v >= 1.3 ? '♪' : v >= 1.25 ? '★' : v >= 1.2 ? '☆' : v >= 1.15 ? '◎' : v >= 1.1 ? '○' : v >= 1.05 ? '△' : '×';
+  v >= 1.4 ? percent(v) : v >= 1.35 ? '∞' : v >= 1.3 ? '♪' : v >= 1.25 ? '★' : v >= 1.2 ? '☆' : v >= 1.15 ? '◎' : v >= 1.1 ? '○' : v >= 1.05 ? '△' : '×';
 
 /** The "nicks" effect on a newborn's stats (operation order kept as in the original). */
 export function nixOf(blood: Blood, variety: number): Nix {

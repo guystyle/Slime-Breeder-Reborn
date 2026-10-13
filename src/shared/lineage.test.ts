@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Blood, ZERO_LIN, affinityPrint, branchNx, inherit, newNx, nixOf, seven, zeroBlood } from './lineage.ts';
+import { type Blood, percent, tidyPrint, ZERO_LIN, affinityPrint, branchNx, inherit, newNx, nixOf, seven, zeroBlood } from './lineage.ts';
 import { seeded } from './rng.ts';
 
 const lin = (no: number, nx: string, name = `L${no}`) => ({ no, name, nx });
@@ -66,5 +66,18 @@ describe('nicks (lineage compatibility)', () => {
     const mine: Blood = [lin(9, '0000000'), lin(5, '1111110'), lin(9, '0000000'), lin(5, '1111110')];
     expect(affinityPrint(mine, lin(5, '1111110'))).toBe('××××××');
     expect(affinityPrint(mine, lin(6, '4444441'))).not.toBe('××××××');
+  });
+});
+
+describe('nix percent display', () => {
+  it('hides floating point noise like the original (15 significant digits)', () => {
+    expect(percent(1 + 0.4 + 0.05 + 0.05 + 0.05 + 0.05 + 0.1 - 0.05 + 0.05 + 0.05 + 0.1 + 0.05)).toMatch(/^\d+(\.\d)?$/);
+    expect(percent(1.5)).toBe('50');
+    expect(percent(1.4500000000000002)).toBe('45');
+  });
+  it('tidies already stored prints', () => {
+    expect(tidyPrint('××50.0000000000000060○×△')).toBe('××50○×△');
+    expect(tidyPrint('○△×45.00000000000001×◎')).toBe('○△×45×◎');
+    expect(tidyPrint('××××××')).toBe('××××××');
   });
 });

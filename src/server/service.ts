@@ -3,7 +3,7 @@ import { type BattleReport, fight } from '../shared/battle.ts';
 import { type ErrorCode, ERROR_TEXT } from '../shared/errors.ts';
 import { type Dna, type Kind, colorOf, eveDna, express, kindOf, mix, mutate } from '../shared/dna.ts';
 import { DEFAULT_COOLDOWN_MIN, HALL_MIN_DEFENSES, RANK_SIZE, SEED_GAGE, cutLength, mustFight, scalePoints } from '../shared/ladder.ts';
-import { type Blood, type Lin, STAT_KEYS, affinityPrint, branchNx, inherit, nixOf, poorMatch, zeroBlood } from '../shared/lineage.ts';
+import { type Blood, type Lin, STAT_KEYS, affinityPrint, branchNx, inherit, nixOf, poorMatch, tidyPrint, zeroBlood } from '../shared/lineage.ts';
 import { type Rng } from '../shared/rng.ts';
 import type { Db, Stmt, Store } from './store.ts';
 import { type Stats, deriveStats, dispCut, shownStats, spriteSize } from '../shared/stats.ts';
@@ -220,7 +220,7 @@ export class Game {
       color: row.color,
       kind: row.kind as Kind,
       lineage: bloodOf(row),
-      nix: row.nix,
+      nix: tidyPrint(row.nix),
       px: spriteSize(stats.weight, avg),
       seeds: row.seeds,
       children: row.children,
