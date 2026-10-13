@@ -1,4 +1,5 @@
 import type { BattleReport } from './battle.ts';
+import type { MutationName } from './dna.ts';
 import type { Stats } from './stats.ts';
 
 /** Compact ancestry tree: `a` is the owner's side, `b` the mate's side. */
@@ -19,7 +20,7 @@ export interface SlimeView {
   stats: Stats;
   color: string;
   /** visible mutations (absent on very old saved snapshots) */
-  forms?: ('wings' | 'metal' | 'horn')[];
+  forms?: MutationName[];
   seeds: number;
   children: number;
   wins: number;
@@ -65,6 +66,8 @@ export interface FightStep {
   /** the special match against the reigning champion */
   title: boolean;
   gained: number;
+  /** on a loss: the challenger's collected points that went to the defender */
+  given: number;
   total: number;
 }
 

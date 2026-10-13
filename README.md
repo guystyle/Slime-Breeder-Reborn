@@ -25,20 +25,23 @@ Requires Node >= 22.13 (uses built-in `node:sqlite`).
 - Log in with name + password (first login registers; passwords hashed with scrypt).
 - Pick a mate from the top-50 ranking (not slimes with 0 seeds) -> child with mixed DNA -> name it -> fight.
 - DNA: 9 traits x 2 strands (dominant strand expressed, other hidden); mutations equally likely up or down.
-- Battle: SPD fills an energy bar, DEX vs SPD decides hits, STR is damage; stamina costs 4/1/6
+- Battle: about 1% of landed hits are critical (~2.2x). SPD fills an energy bar, DEX vs SPD decides hits, STR is damage; stamina costs 4/1/6
   (attack/evade/hit), weaker below 50%, half strength at 0.
 - Ladder: start at 1 pt, fight upward through slimes with more points (top 3 always), lose = stop.
-  Beat the champion with more points to take the title; champions with >3 defenses enter the Hall of Fame.
+  Winning takes over the defender's points; the slime that stops your run receives all points you collected
+  (rule from the author's guide). Ladder totals are divided by 10 when they get huge. Beat the champion to take the title; champions with >3 defenses enter the Hall of Fame.
 - 15-minute play cooldown; accounts idle for 7 days are purged; one-liner comments.
 
 ## Genetics (beyond stats)
 
 - Colour: three colour genes (R/G/B) in 5 steps, like the original's palettes (founders are grey).
 - Size: the sprite grows with weight using the original's measured relation (50 -> ~67px, 250 -> ~116px).
-- Mutations (**this restoration's own design** - the original's hidden mutations are unknown): `wings`
-  (lighter, faster, flapping), `metal` (heavier, more HP, glossy), `horn` (stronger hits). Each is a rare
-  gene that appears spontaneously (~1.2% per strand), travels through families, can hide for a generation,
-  and only *shows* when the body suits it (e.g. wings need light size + reflex).
+- Mutation parts, modelled on the variants seen in the author's own *plus* edition (sprites `wings`,
+  `crown`, `ribbon`, `halo`/angel, `devil`, `musi`/insect, `aura`, `aho`/ahoge, `zombie`, `dark`/hider) plus
+  an extra `metal`. Parts combine (angel = wings + halo, crowned wings, ribbon + wings). Each is a rare gene
+  (~0.4% per strand) that travels through families, can hide for a generation, and only *shows* when the rest
+  of the DNA suits it. **Which conditions and stat effects each part has is my own design** (the originals
+  are not public). See `/gallery.html` for all parts.
 
 ## Battle calibration
 

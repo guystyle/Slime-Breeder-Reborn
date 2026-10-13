@@ -19,6 +19,8 @@ export interface SideReport {
 export interface BattleEvent {
   who: 'a' | 'b';
   hit: boolean;
+  /** critical hit (about 1% of landed attacks, roughly double damage) */
+  crit: boolean;
   dmg: number;
   hpA: number;
   hpB: number;
@@ -31,7 +33,7 @@ export interface BattleReport {
   events: BattleEvent[];
   a: SideReport;
   b: SideReport;
-  /** "O/X" = a hit/miss, "o/x" = b hit/miss, groups of 10 separated by a space */
+  /** "O/X" = a hit/miss, "o/x" = b hit/miss, "C"/"c" = critical hit, groups of 10 separated by a space */
   log: string;
 }
 
@@ -40,6 +42,8 @@ const ATTACK_COST = 4;
 const EVADE_COST = 1;
 const HIT_COST = 6;
 const MAX_TICKS = 400;
+const CRIT_RATE = 0.01;
+const CRIT_MULT = 2.2;
 
 class Fighter {
   hp: number;
@@ -99,10 +103,11 @@ export function fight(an: string, as: Stats, bn: string, bs: Stats, rng: Rng): B
   const f = [new Fighter(an, as), new Fighter(bn, bs)] as const;
   const marks: string[] = [];
   const events: BattleEvent[] = [];
-  const snap = (who: 'a' | 'b', hit: boolean, dmg: number) =>
+  const snap = (who: 'a' | 'b', hit: boolean, dmg: number, crit = false) =>
     events.push({
       who,
       hit,
+      crit,
       dmg,
       hpA: Math.max(0, Math.round(f[0].hp)),
       hpB: Math.max(0, Math.round(f[1].hp)),
@@ -131,13 +136,14 @@ export function fight(an: string, as: Stats, bn: string, bs: Stats, rng: Rng): B
         if (hit) {
           const q = Math.max(rng(), rng());
           me.dmgRolls.push(q);
-          const dmg = Math.max(1, Math.round(me.s.str * HP_SCALE * 1.05 * q * me.eff));
+          const crit = rng() < CRIT_RATE;
+          const dmg = Math.max(1, Math.round(me.s.str * HP_SCALE * 1.05 * q * me.eff * (crit ? CRIT_MULT : 1)));
           foe.hp -= dmg;
           foe.spend(HIT_COST);
           me.hits++;
           me.dmgTotal += dmg;
-          marks.push(big ? 'O' : 'o');
-          snap(big ? 'a' : 'b', true, dmg);
+          marks.push(crit ? (big ? 'C' : 'c') : big ? 'O' : 'o');
+          snap(big ? 'a' : 'b', true, dmg, crit);
         } else {
           foe.spend(EVADE_COST);
           marks.push(big ? 'X' : 'x');

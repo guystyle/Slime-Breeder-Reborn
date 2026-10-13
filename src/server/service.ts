@@ -2,7 +2,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { fight } from '../shared/battle.ts';
 import { type Dna, breed, founderDna } from '../shared/dna.ts';
-import { HALL_MIN_DEFENSES, MATES_SEEDS, RANK_SIZE, nextOpponent, pointsForWin } from '../shared/ladder.ts';
+import { HALL_MIN_DEFENSES, MATES_SEEDS, RANK_SIZE, nextOpponent, normalizePoints, pointsForWin } from '../shared/ladder.ts';
 import { type Rng } from '../shared/rng.ts';
 import { deriveColor, deriveForms, deriveStats } from '../shared/stats.ts';
 import type {
@@ -314,8 +314,9 @@ export class Game {
         const rep = fight(child.name, myStats, opp.name, deriveStats(JSON.parse(opp.dna) as Dna), this.rng);
         const won = rep.winner === 'a';
         const gained = won ? pointsForWin(opp) : 0;
+        const given = won ? 0 : points;
         points += gained;
-        steps.push({ opponent: this.view(opp, ladder), report: rep, won, title, gained, total: points });
+        steps.push({ opponent: this.view(opp, ladder), report: rep, won, title, gained, given, total: points });
         if (won) {
           child.wins++;
           child.streak++;
@@ -326,6 +327,7 @@ export class Game {
           child.streak = 0;
           opp.wins++;
           opp.streak++;
+          opp.points += given; // the defender collects the challenger's whole run
         }
         return won;
       };
@@ -362,6 +364,8 @@ export class Game {
         'UPDATE slimes SET wins=?, losses=?, streak=?, points=?, defenses=?, champ=?, ranked=?, best_rank=? WHERE id=?',
       );
       const all = [...ladder, child];
+      const scaled = normalizePoints(all.map((r) => r.points));
+      all.forEach((r, i) => (r.points = scaled[i]!));
       all.sort((a, b) => b.champ - a.champ || b.points - a.points || a.id - b.id);
       all.forEach((r, i) => {
         const rank = i + 1;

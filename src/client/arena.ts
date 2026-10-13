@@ -92,7 +92,7 @@ export function arena(me: Pick<SlimeView, 'name' | 'color' | 'stats' | 'forms'>,
       if (skipped) break;
       if (ev.hit) {
         void shake(def);
-        floatText(def.body, `-${ev.dmg}`, 'dmg');
+        floatText(def.body, ev.crit ? `CRITICAL! -${ev.dmg}` : `-${ev.dmg}`, ev.crit ? 'dmg crit' : 'dmg');
       } else {
         void dodge(def);
         floatText(def.body, 'miss', 'miss');

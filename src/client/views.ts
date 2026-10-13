@@ -1,4 +1,5 @@
 import type { BattleReport, SideReport } from '../shared/battle.ts';
+import type { MutationName } from '../shared/dna.ts';
 import { spriteSize } from '../shared/stats.ts';
 import type { FightStep, Pedigree, SlimeView } from '../shared/types.ts';
 import { h, span } from './dom.ts';
@@ -12,7 +13,19 @@ export const fmtDate = (iso: string) => {
 
 export { sprite } from './sprite.ts';
 
-const FORM_LABEL = { wings: '🪽 Winged', metal: '⚙ Metal', horn: '🦄 Horned' } as const;
+const FORM_LABEL: Record<MutationName, string> = {
+  wings: '🪽 Winged',
+  crown: '👑 Crowned',
+  ribbon: '🎀 Ribbon',
+  halo: '😇 Halo',
+  devil: '😈 Devil',
+  musi: '🐛 Insect',
+  aura: '🔥 Aura',
+  aho: '🤪 Ahoge',
+  zombie: '🧟 Zombie',
+  dark: '🌑 Dark',
+  metal: '⚙ Metal',
+};
 
 export function slimeHeader(s: SlimeView, opts: { versus?: boolean } = {}): HTMLElement {
   const rank = s.rank ? `Rank ${s.rank}` : 'Unranked';
@@ -114,14 +127,14 @@ export function battleReport(rep: BattleReport): HTMLElement {
   const log = h('div', { class: 'log' });
   for (const ch of rep.log) {
     if (ch === ' ') log.append(' ');
-    else log.append(h('span', { class: /[OX]/.test(ch) ? 'm' : '' }, ch));
+    else log.append(h('span', { class: /[OXC]/.test(ch) ? 'm' : '' }, ch));
   }
   return h(
     'div',
     {},
     h('table', { class: 'battle' }, sideRow(rep.a, true, rep.winner === 'a'), sideRow(rep.b, false, rep.winner === 'b')),
     log,
-    h('div', { class: 'small' }, '[O]=Hit [X]=Missed [o]=Got hit [x]=Evaded'),
+    h('div', { class: 'small' }, '[O]=Hit [X]=Missed [C]=Critical [o]=Got hit [x]=Evaded [c]=Got critical'),
   );
 }
 
@@ -131,7 +144,7 @@ export function roundDetails(step: FightStep, finalPoints: number): HTMLElement 
   if (step.won) {
     root.append(h('div', { class: 'result stamp' }, h('div', { class: 'big win' }, 'YOU WIN!'), `+${step.gained} pts. NOW ${step.total}`, h('small', {}, 'pts.')));
   } else {
-    root.append(h('div', { class: 'result stamp' }, h('div', { class: 'big lose' }, 'YOU LOSE!'), `TOTAL ${finalPoints}`, h('small', {}, 'pts.')));
+    root.append(h('div', { class: 'result stamp' }, h('div', { class: 'big lose' }, 'YOU LOSE!'), `TOTAL ${finalPoints}`, h('small', {}, 'pts.'), step.given > 1 ? h('div', { class: 'small' }, `${step.opponent.name} took your ${step.given} points.`) : ''));
   }
   return root;
 }

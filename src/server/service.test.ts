@@ -127,3 +127,26 @@ describe('Game', () => {
     expect(() => g.addComment('me', '  ')).toThrow(GameError);
   });
 });
+
+describe('point transfer (original rule)', () => {
+  it('a winner takes over the defender\'s points; a loser hands its run to the defender', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(5), cooldownMin: 0 });
+    const before = new Map(g.ranking().map((s) => [s.id, s.points]));
+    const e = g.enter('hero', 'pw');
+    if (!e.ok) throw new Error('enter');
+    g.mate(e.token, e.mates[0]!.id);
+    const f = g.fight(e.token, 'Hero');
+    let running = 1;
+    for (const st of f.steps) {
+      if (st.won) {
+        expect(st.gained).toBe(before.get(st.opponent.id));
+        running += st.gained;
+      } else {
+        expect(st.given).toBe(running);
+        const after = g.ranking().find((s) => s.id === st.opponent.id);
+        if (after) expect(after.points).toBeGreaterThanOrEqual(before.get(st.opponent.id)! + running);
+      }
+      expect(st.total).toBe(running);
+    }
+  });
+});

@@ -10,10 +10,17 @@ export interface Ranked {
   streak: number;
 }
 
-/** Points a challenger earns for beating `opp`: scales with the foe's standing, plus a bonus for ending its streak. */
-export function pointsForWin(opp: Ranked): number {
-  return 1 + Math.floor(opp.points / 2) + opp.streak;
-}
+/**
+ * Beating a slime takes over all of its points. Losing never costs points,
+ * but the slime that stops a challenger's winning streak receives every point
+ * the challenger had collected so far.
+ */
+export const pointsForWin = (opp: Ranked): number => opp.points;
+
+/** When totals grow too large the whole ladder is divided by 10 (original behaviour). */
+export const POINT_CEILING = 1_000_000_000_000;
+export const normalizePoints = (pts: number[]): number[] =>
+  Math.max(...pts, 0) > POINT_CEILING ? pts.map((p) => Math.max(1, Math.floor(p / 10))) : pts;
 
 /**
  * Opponents for a challenger, lowest rank first. Only slimes holding more

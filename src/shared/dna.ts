@@ -19,10 +19,14 @@ export type TraitName = (typeof TRAITS)[number];
  * spontaneously, then travel through the family like any other gene
  * (hidden strands can resurface generations later). Whether a mutation shows
  * also depends on conditions in the slime's other traits, see stats.ts.
+ *
+ * The visual parts mirror the variants seen in the author's "plus" edition
+ * (wings, crown, ribbon, halo, devil, insect, aura, ahoge, zombie, dark);
+ * `metal` is an extra of this restoration.
  */
-export const MUTATIONS = ['wings', 'metal', 'horn'] as const;
+export const MUTATIONS = ['wings', 'crown', 'ribbon', 'halo', 'devil', 'musi', 'aura', 'aho', 'zombie', 'dark', 'metal'] as const;
 export type MutationName = (typeof MUTATIONS)[number];
-export const SPONTANEOUS_RATE = 0.012;
+export const SPONTANEOUS_RATE = 0.004;
 export const MUTATION_SHOWS_AT = 50;
 
 export type Dna = Record<TraitName, Strand> & Partial<Record<MutationName, Strand>>;

@@ -117,15 +117,19 @@ describe('mutations', () => {
     expect(deriveForms(build({ wings: 80, reflex: 10 }))).not.toContain('wings');
     expect(deriveForms(build({ wings: 20, reflex: 60, size: 40 }))).toEqual([]);
     expect(deriveForms(build({ metal: 80, vitality: 50, size: 50 }))).toContain('metal');
-    expect(deriveForms(build({ horn: 80, muscle: 50 }))).toContain('horn');
+    expect(deriveForms(build({ devil: 80, muscle: 50, size: 40 }))).toEqual(['devil']);
+    expect(deriveForms(build({ wings: 80, halo: 80, reflex: 60, size: 40, stamina: 50 }))).toEqual(['wings', 'halo']); // angel
+    expect(deriveForms(build({ halo: 80, stamina: 50 }))).toEqual([]); // a halo needs wings
+    expect(deriveForms(build({ aho: 80, brain: 10 }))).toEqual(['aho']);
+    expect(deriveForms(build({ aho: 80, brain: 60 }))).toEqual([]);
   });
 
-  it('change stats: wings are lighter and faster, metal heavier with more HP, horn hits harder', () => {
+  it('change stats: wings are lighter and faster, metal heavier with more HP, devils hit harder', () => {
     const base = build({ reflex: 60, size: 40, vitality: 50, muscle: 50 });
     const b = deriveStats(base);
     const w = deriveStats(build({ reflex: 60, size: 40, vitality: 50, muscle: 50, wings: 80 }));
     const m = deriveStats(build({ reflex: 60, size: 40, vitality: 50, muscle: 50, metal: 80 }));
-    const h = deriveStats(build({ reflex: 60, size: 40, vitality: 50, muscle: 50, horn: 80 }));
+    const h = deriveStats(build({ reflex: 60, size: 40, vitality: 50, muscle: 50, devil: 80 }));
     expect(w.spd).toBeGreaterThan(b.spd);
     expect(w.weight).toBeLessThan(b.weight);
     expect(m.hp).toBeGreaterThan(b.hp);
@@ -146,7 +150,7 @@ describe('mutations', () => {
       }
     }
     for (const d of pool) if (MUTATIONS.some((m) => (d[m]?.[0].v ?? 0) > 0)) inherited++;
-    expect(seen).toBeGreaterThan(20); // spontaneous gains happen
+    expect(seen).toBeGreaterThan(8); // spontaneous gains happen
     expect(inherited).toBeGreaterThan(0); // and spread through the population
   });
 
@@ -155,5 +159,21 @@ describe('mutations', () => {
     for (const m of MUTATIONS) delete d[m];
     expect(deriveForms(d)).toEqual([]);
     expect(() => breed(d, d, seeded(1))).not.toThrow();
+  });
+});
+
+describe('critical hits', () => {
+  it('happen about 1% of landed attacks and show up as C/c in the log', () => {
+    const rng = seeded(8);
+    let hits = 0;
+    let crits = 0;
+    for (let i = 0; i < 300; i++) {
+      const r = fight('A', strong, 'B', strong, rng);
+      hits += r.a.hits + r.b.hits;
+      crits += (r.log.match(/[Cc]/g) ?? []).length;
+      expect(r.events.filter((e) => e.crit).length).toBe((r.log.match(/[Cc]/g) ?? []).length);
+    }
+    expect(crits / hits).toBeGreaterThan(0.004);
+    expect(crits / hits).toBeLessThan(0.02);
   });
 });
