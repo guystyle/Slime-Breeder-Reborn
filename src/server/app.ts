@@ -147,7 +147,8 @@ export function createApp(getGame: () => Promise<Game> = sharedGame): Hono {
   app.get('/api/config', async (c) => c.json({ cooldownMin: (await getGame()).cooldownMin }));
   app.get('/api/rank', async (c) => c.json({ slimes: await (await getGame()).ranking() }));
   app.get('/api/lineages', async (c) => c.json({ lineages: await (await getGame()).lineages() }));
-  app.get('/api/lineage/:no', async (c) => c.json(await (await getGame()).lineage(Number(c.req.param('no')), c.req.query('token') || undefined)));
+  // One path segment on purpose: nested paths like /api/lineage/5 returned Vercel's own 404 in production.
+  app.get('/api/lineage', async (c) => c.json(await (await getGame()).lineage(Number(c.req.query('no')), c.req.query('token') || undefined)));
   app.get('/api/nix', async (c) => c.json(await (await getGame()).nixTable(c.req.query('token') ?? '')));
   app.get('/api/title-matches', async (c) => c.json({ matches: await (await getGame()).titleMatches() }));
   app.get('/api/hall', async (c) => c.json({ entries: await (await getGame()).hall() }));
@@ -159,7 +160,7 @@ export function createApp(getGame: () => Promise<Game> = sharedGame): Hono {
   });
 
   // Daily housekeeping for serverless hosting (Vercel Cron sends `Authorization: Bearer $CRON_SECRET`).
-  app.get('/api/cron/purge', async (c) => {
+  app.get('/api/purge', async (c) => {
     const secret = process.env.CRON_SECRET;
     if (!secret || c.req.header('authorization') !== `Bearer ${secret}`) return c.json({ ok: false, code: 'not-found' }, 404);
     return c.json({ ok: true, purged: await (await getGame()).purgeInactive() });

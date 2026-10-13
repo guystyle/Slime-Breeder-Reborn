@@ -7,5 +7,5 @@
   "functions": {
     "api/[...path].js": { "maxDuration": 30 }
   },
-  "crons": [{ "path": "/api/cron/purge", "schedule": "0 4 * * *" }]
+  "crons": [{ "path": "/api/purge", "schedule": "0 4 * * *" }]
 }

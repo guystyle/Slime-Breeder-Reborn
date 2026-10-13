@@ -13209,7 +13209,7 @@ function createApp(getGame = sharedGame) {
   app2.get("/api/config", async (c) => c.json({ cooldownMin: (await getGame()).cooldownMin }));
   app2.get("/api/rank", async (c) => c.json({ slimes: await (await getGame()).ranking() }));
   app2.get("/api/lineages", async (c) => c.json({ lineages: await (await getGame()).lineages() }));
-  app2.get("/api/lineage/:no", async (c) => c.json(await (await getGame()).lineage(Number(c.req.param("no")), c.req.query("token") || void 0)));
+  app2.get("/api/lineage", async (c) => c.json(await (await getGame()).lineage(Number(c.req.query("no")), c.req.query("token") || void 0)));
   app2.get("/api/nix", async (c) => c.json(await (await getGame()).nixTable(c.req.query("token") ?? "")));
   app2.get("/api/title-matches", async (c) => c.json({ matches: await (await getGame()).titleMatches() }));
   app2.get("/api/hall", async (c) => c.json({ entries: await (await getGame()).hall() }));
@@ -13219,7 +13219,7 @@ function createApp(getGame = sharedGame) {
     await (await getGame()).addComment(str(b.user), str(b.text));
     return c.json({ ok: true });
   });
-  app2.get("/api/cron/purge", async (c) => {
+  app2.get("/api/purge", async (c) => {
     const secret = process.env.CRON_SECRET;
     if (!secret || c.req.header("authorization") !== `Bearer ${secret}`) return c.json({ ok: false, code: "not-found" }, 404);
     return c.json({ ok: true, purged: await (await getGame()).purgeInactive() });

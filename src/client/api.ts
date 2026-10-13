@@ -62,7 +62,7 @@ export const api = {
   comments: () => call<{ comments: CommentView[] }>('/api/comments'),
   say: (user: string, text: string) => call<{ ok: true }>('/api/comments', { user, text }),
   lineages: () => call<{ lineages: LineageRow[] }>('/api/lineages'),
-  lineage: (no: number, token?: string) => call<LineageDetail>(`/api/lineage/${no}${token ? `?token=${encodeURIComponent(token)}` : ''}`),
+  lineage: (no: number, token?: string) => call<LineageDetail>(`/api/lineage?no=${no}${token ? `&token=${encodeURIComponent(token)}` : ''}`),
   nix: (token: string) => call<NixTable>(`/api/nix?token=${encodeURIComponent(token)}`),
   titleMatches: () => call<{ matches: TitleMatchLog[] }>('/api/title-matches'),
 };
