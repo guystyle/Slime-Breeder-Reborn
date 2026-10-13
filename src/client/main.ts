@@ -23,7 +23,7 @@ root.style.setProperty('--bg-strip', `url(${BG_STRIP})`);
 root.style.setProperty('--bg-strip2', `url(${BG2_STRIP})`);
 
 const showError = (box: HTMLElement, e: unknown) => {
-  box.textContent = e instanceof ApiError ? errorText(e.code, e.params) : e instanceof Error ? e.message : String(e);
+  box.textContent = e instanceof ApiError ? errorText(e.code, e.params) + (e.code === 'server' && e.detail ? ` [${e.detail}]` : '') : e instanceof Error ? e.message : String(e);
 };
 
 /** Run an async action behind a button, surfacing errors into `box`. */

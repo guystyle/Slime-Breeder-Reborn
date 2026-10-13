@@ -17,6 +17,7 @@ export class ApiError extends Error {
     readonly code: string,
     readonly params: Record<string, string | number>,
     message: string,
+    readonly detail?: string,
   ) {
     super(message);
   }
@@ -28,8 +29,8 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = (await res.json()) as T & { ok?: boolean; error?: string; code?: string; params?: Record<string, string | number> };
-  if (!res.ok || data.ok === false) throw new ApiError(data.code ?? 'server', data.params ?? {}, data.error ?? 'Request failed');
+  const data = (await res.json()) as T & { ok?: boolean; error?: string; code?: string; params?: Record<string, string | number>; detail?: string };
+  if (!res.ok || data.ok === false) throw new ApiError(data.code ?? 'server', data.params ?? {}, data.error ?? 'Request failed', data.detail);
   return data;
 }
 

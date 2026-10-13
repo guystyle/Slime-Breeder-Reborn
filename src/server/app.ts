@@ -8,8 +8,22 @@ import { openDb } from './store.ts';
  * otherwise a local SQLite file (SLIME_DB, default ./slime.db).
  */
 export function dbConfig(env: Record<string, string | undefined> = process.env) {
-  const url = env.TURSO_DATABASE_URL || `file:${env.SLIME_DB ?? 'slime.db'}`;
-  return { url, authToken: env.TURSO_AUTH_TOKEN };
+  const raw = (env.TURSO_DATABASE_URL ?? '').trim();
+  if (!raw && env.VERCEL) {
+    throw new Error(
+      'TURSO_DATABASE_URL is not set for this deployment. Add it (and TURSO_AUTH_TOKEN) under Vercel > Settings > Environment Variables for the Production environment, then redeploy.',
+    );
+  }
+  // libsql:// is the dashboard's spelling; the serverless client speaks plain HTTPS
+  const url = (raw || `file:${env.SLIME_DB ?? 'slime.db'}`).replace(/^libsql:\/\//, 'https://');
+  return { url, authToken: env.TURSO_AUTH_TOKEN?.trim() || undefined };
+}
+
+/** Error text that is safe to show: secrets removed, length capped. */
+export function describeError(e: unknown, env: Record<string, string | undefined> = process.env): string {
+  let msg = e instanceof Error ? e.message : String(e);
+  for (const secret of [env.TURSO_AUTH_TOKEN, env.CRON_SECRET]) if (secret && secret.length > 4) msg = msg.split(secret.trim()).join('***');
+  return msg.slice(0, 300);
 }
 
 let shared: Promise<Game> | null = null;
@@ -44,7 +58,26 @@ export function createApp(getGame: () => Promise<Game> = sharedGame): Hono {
   app.onError((e, c) => {
     if (e instanceof GameError) return c.json({ ok: false, error: e.message, code: e.code, params: e.params }, 400);
     console.error(e);
-    return c.json({ ok: false, error: 'Server error.', code: 'server', params: {} }, 500);
+    return c.json({ ok: false, error: 'Server error.', code: 'server', params: {}, detail: describeError(e) }, 500);
+  });
+
+  // Quick diagnosis for deployments: open /api/health in the browser.
+  app.get('/api/health', async (c) => {
+    let cfg: ReturnType<typeof dbConfig>;
+    try {
+      cfg = dbConfig();
+    } catch (e) {
+      return c.json({ ok: false, stage: 'config', message: describeError(e) }, 500);
+    }
+    try {
+      const g = await getGame();
+      const slimes = (await g.ranking()).length;
+      let host = 'local file';
+      if (!cfg.url.startsWith('file:')) host = new URL(cfg.url).host;
+      return c.json({ ok: true, database: cfg.url.startsWith('file:') ? 'file' : 'remote', host, hasToken: !!cfg.authToken, rankedSlimes: slimes });
+    } catch (e) {
+      return c.json({ ok: false, stage: 'database', host: cfg.url.startsWith('file:') ? 'local file' : new URL(cfg.url).host, hasToken: !!cfg.authToken, message: describeError(e) }, 500);
+    }
   });
 
   app.post('/api/enter', async (c) => {
