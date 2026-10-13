@@ -35,6 +35,8 @@ function showResults() {
 let banner = '';
 /** The remembered account on this device (from the HttpOnly cookie) and when its next play is allowed. */
 let identity: string | null = null;
+/** Whoever last logged in on this page (remembered or not): the default author of a "one word" comment. */
+let lastUser: string | null = null;
 let waitUntil = 0;
 let tickTimer: number | undefined;
 
@@ -262,7 +264,9 @@ function rememberedPanel(user: string, err: HTMLElement): HTMLElement {
  */
 async function tryResume(err?: HTMLElement): Promise<boolean> {
   try {
-    session = await api.resume();
+    const resumed = await api.resume();
+    session = resumed;
+    lastUser = resumed.mother.owner;
     waitUntil = 0;
     banner = '';
     renderTop();
@@ -291,13 +295,22 @@ async function titleTop(): Promise<HTMLElement> {
     void guarded(btn, err, async () => {
       const entered = await api.enter(user.value, pass.value, keep.checked);
       session = entered;
+      lastUser = entered.mother.owner;
       if (keep.checked) identity = entered.mother.owner;
       banner = '';
       renderTop();
     })();
   });
 
-  const cName = h('input', { type: 'text', size: 12, maxlength: 32, value: t('comment.name') });
+  const cName = h('input', { type: 'text', size: 12, maxlength: 32, value: identity ?? lastUser ?? t('comment.name') });
+  // the author follows the account name (the remembered one, or what is being typed into the login form) until it is edited by hand
+  let authorEdited = false;
+  cName.addEventListener('input', () => {
+    authorEdited = true;
+  });
+  user.addEventListener('input', () => {
+    if (!authorEdited) cName.value = user.value.trim() || t('comment.name');
+  });
   const cText = h('input', { type: 'text', size: 50, maxlength: 300 });
   const cBtn = h('button', { type: 'submit' }, t('comment.say'));
   const cErr = errorBox();
