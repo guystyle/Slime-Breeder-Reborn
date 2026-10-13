@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { fight } from './battle.ts';
-import { breed, founderDna } from './dna.ts';
+import { type Dna, MUTATIONS, TRAITS, breed, expressed, founderDna } from './dna.ts';
 import { seeded } from './rng.ts';
-import { deriveColor, deriveStats } from './stats.ts';
+import { deriveColor, deriveForms, deriveStats, spriteSize } from './stats.ts';
 
 const strong = { weight: 250, hp: 270, stm: 210, str: 28, dex: 28, spd: 60 };
 const weak = deriveStats(founderDna(seeded(1)));
@@ -42,15 +42,118 @@ describe('dna', () => {
   it('mutation is unbiased: offspring get stronger as often as weaker', () => {
     const rng = seeded(11);
     const p = founderDna(rng);
-    for (const t of Object.keys(p) as (keyof typeof p)[]) p[t] = [p[t][0], p[t][0]]; // homozygous parent
+    for (const t of TRAITS) p[t] = [p[t][0], p[t][0]]; // homozygous parent
     let up = 0;
     let down = 0;
-    const base = deriveStats(p).str;
+    const base = expressed(p.muscle);
     for (let i = 0; i < 3000; i++) {
-      const c = deriveStats(breed(p, p, rng, 0.5)).str;
+      const c = expressed(breed(p, p, rng, 0.5).muscle);
       if (c > base) up++;
       else if (c < base) down++;
     }
     expect(Math.abs(up - down) / (up + down)).toBeLessThan(0.15);
+  });
+});
+
+/** Stat blocks of ranked slimes copied from the original game's ranking page (rank 1, 2, 3, 6, 48, 50). */
+const REAL = [
+  { weight: 263, hp: 276, stm: 225, str: 28, dex: 30, spd: 59 },
+  { weight: 256, hp: 268, stm: 200, str: 28, dex: 30, spd: 60 },
+  { weight: 243, hp: 269, stm: 204, str: 28, dex: 25, spd: 64 },
+  { weight: 251, hp: 270, stm: 199, str: 27, dex: 24, spd: 50 },
+  { weight: 272, hp: 290, stm: 136, str: 30, dex: 30, spd: 62 },
+  { weight: 247, hp: 262, stm: 233, str: 26, dex: 25, spd: 48 },
+];
+
+describe('calibration against the original ranking', () => {
+  it('produces fights shaped like the original reports', () => {
+    const rng = seeded(99);
+    let n = 0;
+    let attacks = 0;
+    let hits = 0;
+    let stm = 0;
+    let dmgPerStr = 0;
+    for (const a of REAL)
+      for (const b of REAL) {
+        if (a === b) continue;
+        for (let k = 0; k < 20; k++) {
+          const r = fight('a', a, 'b', b, rng);
+          n++;
+          attacks += r.a.attacks + r.b.attacks;
+          hits += r.a.hits + r.b.hits;
+          stm += (r.a.stmPct + r.b.stmPct) / 2;
+          dmgPerStr += r.a.dmgAve / a.str;
+        }
+      }
+    expect(attacks / n / 2).toBeGreaterThan(22); // original sample: 32 and 44 attacks
+    expect(attacks / n / 2).toBeLessThan(45);
+    expect(hits / attacks).toBeGreaterThan(0.35); // original: 37%-48%
+    expect(hits / attacks).toBeLessThan(0.55);
+    expect(stm / n).toBeGreaterThan(5); // original: 5%-20% left
+    expect(stm / n).toBeLessThan(30);
+    expect(dmgPerStr / n).toBeGreaterThan(5); // original: 5.6-8.7 per STR
+    expect(dmgPerStr / n).toBeLessThan(9);
+  });
+
+  it('evolved genes land near the original equilibrium and sprites scale with weight', () => {
+    expect(spriteSize(50)).toBeGreaterThanOrEqual(65);
+    expect(spriteSize(50)).toBeLessThanOrEqual(69);
+    expect(spriteSize(250)).toBeGreaterThanOrEqual(113);
+    expect(spriteSize(250)).toBeLessThanOrEqual(118);
+    expect(spriteSize(300)).toBeGreaterThan(spriteSize(250));
+  });
+});
+
+describe('mutations', () => {
+  const build = (over: Partial<Record<string, number>>): Dna => {
+    const d = founderDna(seeded(3));
+    for (const [k, v] of Object.entries(over)) (d as Record<string, unknown>)[k] = [{ v, d: 99 }, { v, d: 0 }];
+    return d;
+  };
+
+  it('show only when the gene is strong and the body suits it', () => {
+    expect(deriveForms(build({ wings: 80, reflex: 60, size: 40 }))).toContain('wings');
+    expect(deriveForms(build({ wings: 80, reflex: 60, size: 90 }))).not.toContain('wings'); // too heavy to fly
+    expect(deriveForms(build({ wings: 80, reflex: 10 }))).not.toContain('wings');
+    expect(deriveForms(build({ wings: 20, reflex: 60, size: 40 }))).toEqual([]);
+    expect(deriveForms(build({ metal: 80, vitality: 50, size: 50 }))).toContain('metal');
+    expect(deriveForms(build({ horn: 80, muscle: 50 }))).toContain('horn');
+  });
+
+  it('change stats: wings are lighter and faster, metal heavier with more HP, horn hits harder', () => {
+    const base = build({ reflex: 60, size: 40, vitality: 50, muscle: 50 });
+    const b = deriveStats(base);
+    const w = deriveStats(build({ reflex: 60, size: 40, vitality: 50, muscle: 50, wings: 80 }));
+    const m = deriveStats(build({ reflex: 60, size: 40, vitality: 50, muscle: 50, metal: 80 }));
+    const h = deriveStats(build({ reflex: 60, size: 40, vitality: 50, muscle: 50, horn: 80 }));
+    expect(w.spd).toBeGreaterThan(b.spd);
+    expect(w.weight).toBeLessThan(b.weight);
+    expect(m.hp).toBeGreaterThan(b.hp);
+    expect(m.weight).toBeGreaterThan(b.weight);
+    expect(h.str).toBeGreaterThan(b.str);
+  });
+
+  it('appear spontaneously, are inherited, and can hide for a generation', () => {
+    const rng = seeded(21);
+    const pool: Dna[] = Array.from({ length: 40 }, () => founderDna(rng));
+    let seen = 0;
+    let inherited = 0;
+    for (let g = 0; g < 60; g++) {
+      for (let i = 0; i < pool.length; i++) {
+        const child = breed(pool[i]!, pool[(i * 7 + g) % pool.length]!, rng);
+        if (MUTATIONS.some((m) => (child[m]?.[0].v ?? 0) > 0 || (child[m]?.[1].v ?? 0) > 0)) seen++;
+        pool[i] = child;
+      }
+    }
+    for (const d of pool) if (MUTATIONS.some((m) => (d[m]?.[0].v ?? 0) > 0)) inherited++;
+    expect(seen).toBeGreaterThan(20); // spontaneous gains happen
+    expect(inherited).toBeGreaterThan(0); // and spread through the population
+  });
+
+  it('old DNA without mutation genes still works', () => {
+    const d = founderDna(seeded(4));
+    for (const m of MUTATIONS) delete d[m];
+    expect(deriveForms(d)).toEqual([]);
+    expect(() => breed(d, d, seeded(1))).not.toThrow();
   });
 });

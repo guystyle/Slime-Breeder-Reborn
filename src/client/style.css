@@ -86,3 +86,76 @@ footer { text-align: right; color: var(--accent); font-style: italic; margin-top
   h1.logo { font-size: 2.2rem; }
   input[type="text"] { width: 100%; max-width: 100%; margin: 2px 0; }
 }
+
+/* ---------- motion ---------- */
+.rel { position: relative; }
+.sprite { overflow: visible; }
+.sprite.idle { transform-origin: 50% 92%; animation: squish 2.8s ease-in-out infinite; animation-delay: var(--d, 0s); }
+.sprite.flying { animation: hover 2.2s ease-in-out infinite; animation-delay: var(--d, 0s); transform-origin: 50% 50%; }
+.sprite .wing { transform-box: fill-box; }
+.sprite .wing { transform-origin: 100% 100%; animation: flap-l 0.5s ease-in-out infinite alternate; }
+.sprite .shine { animation: shine 3.4s ease-in-out infinite; }
+.sprite .eye { transform-box: fill-box; transform-origin: center; animation: blink 4.6s infinite; }
+@keyframes squish { 0%,100% { transform: scale(1,1); } 50% { transform: scale(1.05,0.94); } }
+@keyframes hover { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+@keyframes flap-l { from { transform: rotate(0deg); } to { transform: rotate(-24deg); } }
+@keyframes shine { 0%,55% { transform: translateX(0) rotate(20deg); } 100% { transform: translateX(190px) rotate(20deg); } }
+@keyframes blink { 0%,92%,100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+
+h1.logo { animation: bob 3.6s ease-in-out infinite; text-shadow: 0 0 18px #7f7fff88; }
+@keyframes bob { 0%,100% { transform: translateY(0) rotate(-0.6deg); } 50% { transform: translateY(-5px) rotate(0.6deg); } }
+.stage { position: relative; overflow: hidden; }
+.stage > * { position: relative; z-index: 1; }
+.bubbles { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.bubbles i {
+  position: absolute; bottom: -30px; width: var(--s); height: var(--s); left: var(--x);
+  border-radius: 50%; background: radial-gradient(circle at 30% 30%, #fff8, #7fffff22);
+  animation: rise var(--t) linear infinite; animation-delay: var(--w);
+}
+@keyframes rise { to { transform: translateY(-340px) translateX(var(--dx)); opacity: 0; } }
+
+.pop { animation: pop 0.55s cubic-bezier(.2,1.5,.4,1) both; }
+@keyframes pop { from { transform: scale(0.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.fade-up { animation: fadeUp 0.5s ease-out both; animation-delay: var(--i, 0s); }
+@keyframes fadeUp { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+.slime .box { transition: transform 0.2s, box-shadow 0.2s; }
+.slime .box:hover { transform: translateY(-3px); box-shadow: 0 6px 16px #0ff3; }
+button { transition: transform 0.1s, background 0.2s; }
+button:not(:disabled):hover { background: #356; transform: translateY(-1px); }
+button:not(:disabled):active { transform: scale(0.96); }
+
+.hatch { position: absolute; left: 50%; top: 40px; transform: translateX(-50%); z-index: 5; }
+.egg { display: block; }
+
+.badge { font-size: 0.72em; padding: 1px 7px; border-radius: 9px; margin-left: 6px; vertical-align: middle; }
+.badge.wings { background: #234a7a; } .badge.metal { background: #5a6070; } .badge.horn { background: #6a4f1d; }
+
+/* battle arena */
+.arena { margin: 8px 0; padding: 10px 8px 14px; background: linear-gradient(#002a2a, #001515); border: 1px solid #2a6; border-radius: 8px; position: relative; overflow: hidden; }
+.arena.title-match { border-color: #fc3; box-shadow: 0 0 24px #fc35 inset; }
+.arena-caption { text-align: center; font: italic 1.3rem "Times New Roman", serif; color: #7f7fff; min-height: 1.6em; }
+.arena-caption.win { color: #f66; animation: pop 0.4s both; } .arena-caption.lose { color: #69f; }
+.arena-row { display: flex; align-items: flex-end; justify-content: space-around; gap: 8px; min-height: 220px; }
+.vs { align-self: center; font: italic 1.8rem serif; color: #ff0; opacity: 0.7; }
+.fighter { flex: 1 1 0; max-width: 300px; text-align: center; }
+.fighter-name { font-weight: bold; color: var(--pink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fighter-body { position: relative; display: flex; justify-content: center; align-items: flex-end; min-height: 160px; }
+.bar { position: relative; height: 14px; background: #222; border: 1px solid #567; margin: 2px 0; border-radius: 3px; overflow: hidden; }
+.bar.small { height: 6px; }
+.bar-fill { height: 100%; transition: width 0.25s; }
+.bar-fill.hp { background: linear-gradient(#6f6, #2a2); } .bar-fill.stm { background: #fc3; }
+.bar-text { position: absolute; inset: 0; font-size: 0.72em; line-height: 14px; text-shadow: 0 0 3px #000; }
+.skip { position: absolute; right: 8px; top: 8px; font-size: 0.8em; }
+.float { position: absolute; top: 20%; font-weight: bold; pointer-events: none; text-shadow: 0 0 3px #000; white-space: nowrap; }
+.float.dmg { color: #ff5a5a; font-size: 1.4rem; } .float.miss { color: #9cf; font-size: 1rem; }
+.confetti { position: absolute; left: 50%; top: 40%; pointer-events: none; z-index: 9; }
+.confetti i { position: absolute; width: 8px; height: 12px; }
+.round-label { color: #ff0; font-size: 1.1rem; margin-top: 12px; }
+.stamp { animation: stamp 0.5s cubic-bezier(.2,1.8,.4,1) both; }
+@keyframes stamp { from { transform: scale(2.4) rotate(-6deg); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.details { animation: fadeUp 0.4s both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+@media (max-width: 560px) { .arena-row { min-height: 170px; } .fighter-body { min-height: 120px; } }

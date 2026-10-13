@@ -4,7 +4,7 @@ import { fight } from '../shared/battle.ts';
 import { type Dna, breed, founderDna } from '../shared/dna.ts';
 import { HALL_MIN_DEFENSES, MATES_SEEDS, RANK_SIZE, nextOpponent, pointsForWin } from '../shared/ladder.ts';
 import { type Rng } from '../shared/rng.ts';
-import { deriveColor, deriveStats } from '../shared/stats.ts';
+import { deriveColor, deriveForms, deriveStats } from '../shared/stats.ts';
 import type {
   CommentView,
   EnterResponse,
@@ -143,6 +143,7 @@ export class Game {
       born: new Date(row.born).toISOString(),
       stats: deriveStats(dna),
       color: deriveColor(dna),
+      forms: deriveForms(dna),
       seeds: row.seeds,
       children: row.children,
       wins: row.wins,

@@ -15,8 +15,20 @@ export interface SideReport {
   luckDmg: number | null;
 }
 
+/** One attack, with both sides' state right after it (drives the replay animation). */
+export interface BattleEvent {
+  who: 'a' | 'b';
+  hit: boolean;
+  dmg: number;
+  hpA: number;
+  hpB: number;
+  stmA: number;
+  stmB: number;
+}
+
 export interface BattleReport {
   winner: 'a' | 'b';
+  events: BattleEvent[];
   a: SideReport;
   b: SideReport;
   /** "O/X" = a hit/miss, "o/x" = b hit/miss, groups of 10 separated by a space */
@@ -86,9 +98,20 @@ class Fighter {
 export function fight(an: string, as: Stats, bn: string, bs: Stats, rng: Rng): BattleReport {
   const f = [new Fighter(an, as), new Fighter(bn, bs)] as const;
   const marks: string[] = [];
+  const events: BattleEvent[] = [];
+  const snap = (who: 'a' | 'b', hit: boolean, dmg: number) =>
+    events.push({
+      who,
+      hit,
+      dmg,
+      hpA: Math.max(0, Math.round(f[0].hp)),
+      hpB: Math.max(0, Math.round(f[1].hp)),
+      stmA: Math.round((100 * f[0].stm) / f[0].maxStm),
+      stmB: Math.round((100 * f[1].stm) / f[1].maxStm),
+    });
 
   for (let tick = 0; tick < MAX_TICKS && f[0].hp > 0 && f[1].hp > 0; tick++) {
-    for (const i of [0, 1] as const) f[i].energy += f[i].s.spd * f[i].eff * 3 + 6;
+    for (const i of [0, 1] as const) f[i].energy += f[i].s.spd * f[i].eff * 2 + 30;
     // the slime with more stored energy strikes first this tick
     const order = f[0].energy >= f[1].energy ? [0, 1] : [1, 0];
     for (const i of order as (0 | 1)[]) {
@@ -108,15 +131,17 @@ export function fight(an: string, as: Stats, bn: string, bs: Stats, rng: Rng): B
         if (hit) {
           const q = Math.max(rng(), rng());
           me.dmgRolls.push(q);
-          const dmg = Math.max(1, Math.round(me.s.str * HP_SCALE * 1.5 * q * me.eff));
+          const dmg = Math.max(1, Math.round(me.s.str * HP_SCALE * 1.05 * q * me.eff));
           foe.hp -= dmg;
           foe.spend(HIT_COST);
           me.hits++;
           me.dmgTotal += dmg;
           marks.push(big ? 'O' : 'o');
+          snap(big ? 'a' : 'b', true, dmg);
         } else {
           foe.spend(EVADE_COST);
           marks.push(big ? 'X' : 'x');
+          snap(big ? 'a' : 'b', false, 0);
         }
       }
     }
@@ -124,5 +149,5 @@ export function fight(an: string, as: Stats, bn: string, bs: Stats, rng: Rng): B
 
   const aWins = f[0].hp / f[0].maxHp >= f[1].hp / f[1].maxHp;
   const log = marks.join('').replace(/(.{10})(?=.)/g, '$1 ');
-  return { winner: aWins ? 'a' : 'b', a: f[0].report(), b: f[1].report(), log };
+  return { winner: aWins ? 'a' : 'b', events, a: f[0].report(), b: f[1].report(), log };
 }

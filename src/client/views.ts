@@ -2,6 +2,7 @@ import type { BattleReport, SideReport } from '../shared/battle.ts';
 import { spriteSize } from '../shared/stats.ts';
 import type { FightStep, Pedigree, SlimeView } from '../shared/types.ts';
 import { h, span } from './dom.ts';
+import { sprite } from './sprite.ts';
 
 export const fmtDate = (iso: string) => {
   const d = new Date(iso);
@@ -9,27 +10,9 @@ export const fmtDate = (iso: string) => {
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-/** A white-domed slime: the body takes the genetic colour. */
-export function sprite(color: string, size: number): SVGSVGElement {
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', '0 0 120 120');
-  svg.setAttribute('width', String(size));
-  svg.setAttribute('height', String(size));
-  svg.setAttribute('class', 'sprite');
-  const mk = (tag: string, a: Record<string, string>) => {
-    const e = document.createElementNS(ns, tag);
-    for (const [k, v] of Object.entries(a)) e.setAttribute(k, v);
-    svg.append(e);
-  };
-  mk('path', { d: 'M8 108 C8 52 36 18 62 18 C90 18 112 52 112 108 Z', fill: color, stroke: '#fff', 'stroke-width': '3' });
-  mk('path', { d: 'M30 50 C36 36 48 28 58 26', fill: 'none', stroke: '#fff', 'stroke-width': '5', 'stroke-linecap': 'round', opacity: '0.6' });
-  mk('rect', { x: '44', y: '70', width: '6', height: '14', rx: '2', fill: '#222' });
-  mk('rect', { x: '70', y: '70', width: '6', height: '14', rx: '2', fill: '#222' });
-  mk('ellipse', { cx: '34', cy: '88', rx: '6', ry: '3', fill: '#e55', opacity: '0.8' });
-  mk('ellipse', { cx: '86', cy: '88', rx: '6', ry: '3', fill: '#e55', opacity: '0.8' });
-  return svg;
-}
+export { sprite } from './sprite.ts';
+
+const FORM_LABEL = { wings: '🪽 Winged', metal: '⚙ Metal', horn: '🦄 Horned' } as const;
 
 export function slimeHeader(s: SlimeView, opts: { versus?: boolean } = {}): HTMLElement {
   const rank = s.rank ? `Rank ${s.rank}` : 'Unranked';
@@ -43,6 +26,7 @@ export function slimeHeader(s: SlimeView, opts: { versus?: boolean } = {}): HTML
     h('b', { class: 'pink' }, s.name),
     h('span', { class: 'sub' }, String(s.gen)),
     s.defenses > 0 ? span('yellow sub', ` ${s.defenses}`) : '',
+    ...(s.forms ?? []).map((f) => span(`badge ${f}`, FORM_LABEL[f])),
     ` / `,
     s.seeds > 0 ? span('yellow', String(s.seeds)) : '0',
     ` seeds left / ${s.children} children / ${s.wins} - ${s.losses}`,
@@ -93,7 +77,7 @@ export function slimeCard(s: SlimeView, opts: { versus?: boolean; id?: string } 
     h(
       'div',
       { class: 'slime' },
-      h('div', { class: 'box' }, sprite(s.color, spriteSize(st.weight)), `weight:${st.weight}`),
+      h('div', { class: 'box' }, sprite(s.color, spriteSize(st.weight), s.forms ?? []), `weight:${st.weight}`),
       h(
         'div',
         { class: 'info' },
@@ -141,18 +125,13 @@ export function battleReport(rep: BattleReport): HTMLElement {
   );
 }
 
-export function fightStep(step: FightStep, i: number, last: boolean, finalPoints: number): HTMLElement {
-  const root = h('div', { class: 'round' });
-  root.append(
-    h('div', {}, span('yellow', step.title ? `Title match! ` : `Round ${i + 1} `), step.title ? '' : ''),
-    slimeCard(step.opponent, { versus: true }),
-    battleReport(step.report),
-  );
+/** Numbers, log and the result banner for one round (shown after the replay). */
+export function roundDetails(step: FightStep, finalPoints: number): HTMLElement {
+  const root = h('div', { class: 'details' }, battleReport(step.report));
   if (step.won) {
-    root.append(h('div', { class: 'result' }, h('div', { class: 'big win' }, 'YOU WIN!'), `+${step.gained} pts. NOW ${step.total}`, h('small', {}, 'pts.')));
+    root.append(h('div', { class: 'result stamp' }, h('div', { class: 'big win' }, 'YOU WIN!'), `+${step.gained} pts. NOW ${step.total}`, h('small', {}, 'pts.')));
   } else {
-    root.append(h('div', { class: 'result' }, h('div', { class: 'big lose' }, 'YOU LOSE!'), `TOTAL ${finalPoints}`, h('small', {}, 'pts.')));
+    root.append(h('div', { class: 'result stamp' }, h('div', { class: 'big lose' }, 'YOU LOSE!'), `TOTAL ${finalPoints}`, h('small', {}, 'pts.')));
   }
-  void last;
   return root;
 }

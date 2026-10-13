@@ -1,7 +1,9 @@
 import type { EnterResponse, SlimeView } from '../shared/types.ts';
 import { api } from './api.ts';
 import { h, span } from './dom.ts';
-import { fightStep, fmtDate, slimeCard } from './views.ts';
+import { arena } from './arena.ts';
+import { hatch } from './fx.ts';
+import { fmtDate, roundDetails, slimeCard } from './views.ts';
 
 type Session = Extract<EnterResponse, { ok: true }>;
 
@@ -52,6 +54,20 @@ function guarded(btn: HTMLButtonElement, box: HTMLElement, fn: () => Promise<voi
 }
 
 // ---------- title / login ----------
+
+function bubbles(): HTMLElement {
+  const box = h('div', { class: 'bubbles', 'aria-hidden': 'true' });
+  for (let i = 0; i < 14; i++) {
+    const b = h('i');
+    b.style.setProperty('--s', `${8 + ((i * 7) % 22)}px`);
+    b.style.setProperty('--x', `${(i * 71) % 100}%`);
+    b.style.setProperty('--t', `${6 + ((i * 3) % 7)}s`);
+    b.style.setProperty('--w', `${-(i * 1.3)}s`);
+    b.style.setProperty('--dx', `${((i % 5) - 2) * 14}px`);
+    box.append(b);
+  }
+  return box;
+}
 
 async function titleView() {
   const user = h('input', { type: 'text', size: 16, maxlength: 32, autocomplete: 'username' });
@@ -105,6 +121,7 @@ async function titleView() {
     h(
       'div',
       { class: 'stage' },
+      bubbles(),
       h('h1', { class: 'logo' }, 'SLIME BREEDER'),
       form,
       err,
@@ -131,7 +148,7 @@ function mateView(s: Session) {
   const err = errorBox();
   const form = h(
     'form',
-    {},
+    { class: 'rel' },
     h('div', { class: 'msg' }, `Welcome, ${s.mother.owner}${s.registered ? ' (new account created)' : ''}. Please select the mate for `, h('b', { class: 'pink' }, s.mother.name), '.'),
     h('span', { class: 'pink' }, s.mother.name),
     h('span', { class: 'sub' }, String(s.mother.gen)),
@@ -147,6 +164,7 @@ function mateView(s: Session) {
     void guarded(btn, err, async () => {
       if (!sel.value) throw new Error('Pick a mate first.');
       const r = await api.mate(s.token, Number(sel.value));
+      await hatch(form);
       s.pending = r.child;
       s.phase = 'fight';
       render();
@@ -177,17 +195,28 @@ function fightView(s: Session) {
     e.preventDefault();
     void guarded(btn, err, async () => {
       const r = await api.fight(s.token, name.value);
-      form.replaceWith(h('div', {}, slimeCard(r.slime)));
-      r.steps.forEach((st, i) => results.append(fightStep(st, i, i === r.steps.length - 1, r.finalPoints)));
-      results.append(
-        h(
-          'div',
-          { class: 'result' },
-          r.finalRank ? `${r.slime.name} now stands at rank ${r.finalRank}!` : `${r.slime.name} did not make the ranking.`,
-          h('br'),
-          h('a', { href: '#/rank' }, 'View the ranking'),
-        ),
-      );
+      // show the newborn as it was before the fights; swap in the final record afterwards
+      const born = h('div', { class: 'pop' }, slimeCard(child));
+      form.replaceWith(born);
+      let skipAll = false;
+      const skipBtn = h('button', { type: 'button' }, 'Skip all animations ▸▸');
+      skipBtn.addEventListener('click', () => {
+        skipAll = true;
+        current?.skip();
+      });
+      results.append(skipBtn);
+      let current: ReturnType<typeof arena> | null = null;
+      for (const [i, st] of r.steps.entries()) {
+        const round = h('div', { class: 'round' }, h('div', { class: 'round-label' }, st.title ? 'Title match!' : `Round ${i + 1}`), slimeCard(st.opponent, { versus: true }));
+        results.append(round);
+        current = arena(r.slime, st.opponent, st.report, st.title);
+        if (skipAll) current.skip();
+        round.append(current.el);
+        await current.play();
+        round.append(roundDetails(st, r.finalPoints));
+      }
+      skipBtn.remove();
+      born.replaceChildren(slimeCard(r.slime));
       session = null; // a fresh login is needed for the next generation (15 min cooldown)
     })();
   });
@@ -200,9 +229,11 @@ async function rankView(focusId?: number) {
   page(h('div', {}, 'Loading…'));
   const { slimes } = await api.rank();
   const wrap = h('div', {}, h('div', { class: 'head' }, span('yellow', 'Ranking')));
-  for (const s of slimes) {
-    wrap.append(slimeCard(s, { id: `s${s.id}` }), h('hr'));
-  }
+  slimes.forEach((s, i) => {
+    const card = h('div', { class: 'fade-up' }, slimeCard(s, { id: `s${s.id}` }), h('hr'));
+    card.style.setProperty('--i', `${Math.min(i, 12) * 0.05}s`);
+    wrap.append(card);
+  });
   page(wrap);
   if (focusId) document.getElementById(`s${focusId}`)?.scrollIntoView();
 }

@@ -31,10 +31,25 @@ Requires Node >= 22.13 (uses built-in `node:sqlite`).
   Beat the champion with more points to take the title; champions with >3 defenses enter the Hall of Fame.
 - 15-minute play cooldown; accounts idle for 7 days are purged; one-liner comments.
 
+## Genetics (beyond stats)
+
+- Colour: three colour genes (R/G/B) in 5 steps, like the original's palettes (founders are grey).
+- Size: the sprite grows with weight using the original's measured relation (50 -> ~67px, 250 -> ~116px).
+- Mutations (**this restoration's own design** - the original's hidden mutations are unknown): `wings`
+  (lighter, faster, flapping), `metal` (heavier, more HP, glossy), `horn` (stronger hits). Each is a rare
+  gene that appears spontaneously (~1.2% per strand), travels through families, can hide for a generation,
+  and only *shows* when the body suits it (e.g. wings need light size + reflex).
+
+## Battle calibration
+
+Constants were tuned against the 50 ranked slimes on the original ranking page and its guide sample:
+attacks per side 22-45, hit rate ~45%, stamina left 5-30%, avg damage 5-9 x STR (`npm test` checks these).
+Stat formulas follow the original's weight relations (HP and STR track weight; DEX and SPD fall with it).
+
 ## Known gaps vs. the original
 
-- Hidden "mutation" easter eggs are not implemented (their rules are unknown).
-- Point values per win, DNA->stat formulas and battle constants are my own approximations.
+- The original's own hidden mutations are unknown; the three above are new.
+- Point values per win and the exact DNA->stat formulas are approximations (battle numbers are calibrated, not copied).
 
 ## Layout
 

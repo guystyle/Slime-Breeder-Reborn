@@ -18,6 +18,8 @@ export interface SlimeView {
   born: string;
   stats: Stats;
   color: string;
+  /** visible mutations (absent on very old saved snapshots) */
+  forms?: ('wings' | 'metal' | 'horn')[];
   seeds: number;
   children: number;
   wins: number;
