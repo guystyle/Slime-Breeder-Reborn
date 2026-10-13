@@ -16,7 +16,8 @@ interface Side {
 function side(s: Pick<SlimeView, 'name' | 'color' | 'kind' | 'px'>, maxHp: number, flip: boolean): Side {
   // two fighters must fit side by side: cap the size by the viewport width
   const cap = Math.max(72, Math.min(200, Math.floor((innerWidth - 90) / 2.4)));
-  const size = Math.min(cap, Math.round(s.px * 1.5));
+  // on a narrow screen scale proportionally instead of clamping, so heavy and light slimes still differ
+  const size = cap < 200 ? Math.max(40, Math.round((s.px * 1.5 * cap) / 255)) : Math.min(cap, Math.round(s.px * 1.5));
   const hp = h('div', { class: 'bar-fill hp' });
   const stm = h('div', { class: 'bar-fill stm' });
   const hpText = h('span', { class: 'bar-text' }, `${maxHp}`);

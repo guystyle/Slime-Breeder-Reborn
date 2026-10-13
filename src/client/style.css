@@ -289,7 +289,9 @@ details.comments > summary { cursor: pointer; color: #cfc; margin: 6px 0; user-s
   .login button, .commentform button { width: 100%; }
   .row { flex-wrap: nowrap; }
   .row select { flex: 1; width: auto; }
-  .row input { flex: 1; width: auto; }
+  .row input { flex: 1; width: auto; min-width: 0; }
+  .row .dice { padding: 4px 8px; }
+  .row button[type=submit] { padding: 4px 10px; white-space: nowrap; }
   .row button { flex: none; }
   .who { font-size: 0.95em; }
   .logo { font-size: 2.3rem; }
@@ -297,7 +299,7 @@ details.comments > summary { cursor: pointer; color: #cfc; margin: 6px 0; user-s
 
   /* slime cards */
   .slime { flex-direction: row; }
-  .slime .box { min-width: 0; width: 112px; padding: 10px 4px; flex: none; justify-content: flex-start; gap: 2px; }
+  .slime .box { min-width: 0; width: 136px; padding: 10px 4px; flex: none; justify-content: flex-start; gap: 2px; }
   .slime .info { padding: 5px 6px 8px; overflow-y: hidden; }
   .nixfit { padding-bottom: 2px; overflow-wrap: anywhere; letter-spacing: 1px; }
   .statgrid { grid-template-columns: repeat(3, 1fr); }
@@ -359,3 +361,5 @@ details.comments > summary { cursor: pointer; color: #cfc; margin: 6px 0; user-s
 .backbar { position: sticky; top: 0; z-index: 5; padding: 6px 0; background: linear-gradient(#000 70%, transparent); }
 .backbtn { font-size: 1.05em; padding: 8px 18px; font-weight: bold; }
 @media (max-width: 700px) { .backbtn { width: 100%; padding: 12px 18px; } }
+
+.dice { padding: 2px 8px; font-size: 1.1em; }

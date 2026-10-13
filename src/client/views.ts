@@ -18,6 +18,8 @@ export const kindLabel = (k: Kind) => t(`kind.${k}` as const);
 
 export const mobileQuery = () => matchMedia('(max-width: 700px)');
 export const isMobile = () => mobileQuery().matches;
+/** Squeeze the 33–170px sprite range into 33–124px for the narrow card, keeping every size step visible. */
+export const phonePx = (px: number) => Math.round(33 + ((Math.min(170, Math.max(33, px)) - 33) * (124 - 33)) / (170 - 33));
 
 /** Slime header: rank, name and form on the first line, seeds / children / record / points as small chips below. */
 export function slimeHeader(s: SlimeView, opts: { versus?: boolean } = {}): HTMLElement {
@@ -110,7 +112,7 @@ export function slimeCard(s: SlimeView, opts: { versus?: boolean; id?: string; s
       h(
         'div',
         { class: 'box' },
-        sprite(s.color, isMobile() ? Math.min(s.px, 104) : s.px, s.kind),
+        sprite(s.color, isMobile() ? phonePx(s.px) : s.px, s.kind),
         h('div', { class: 'small' }, t('card.weight', { n: s.stats.weight })),
         s.lineage[3].no ? h('div', { class: 'small' }, lineLink(s.lineage[3], 'own-line')) : '',
       ),

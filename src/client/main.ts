@@ -6,6 +6,7 @@ import { h, span } from './dom.ts';
 import { fxEnabled, hatch, setFx, sparkleAt, startAmbient } from './fx.ts';
 import { guideView } from './guide.ts';
 import { errorText, getLang, setLang, t } from './i18n.ts';
+import { randomName } from './names.ts';
 import { hallView, lineageView, lineagesView, rankView, titlesView } from './lists.ts';
 import { settings, loadSettings } from './settings.ts';
 import { BG2_STRIP, BG_STRIP } from './sprites.gen.ts';
@@ -380,14 +381,18 @@ function mateTop(s: Session): HTMLElement {
 
 function fightTop(s: Session): HTMLElement {
   const child = s.pending!;
-  const name = h('input', { type: 'text', size: 18, maxlength: 36, value: t('default.name') });
+  const name = h('input', { type: 'text', size: 18, maxlength: 36, value: randomName() });
   const btn = h('button', { type: 'submit' }, t('born.fight'));
+  const dice = h('button', { type: 'button', class: 'dice', title: t('born.reroll'), 'aria-label': t('born.reroll') }, '🎲');
+  dice.addEventListener('click', () => {
+    name.value = randomName();
+  });
   const err = errorBox();
   const form = h(
     'form',
     {},
     h('div', { class: 'msg' }, t('born.msg', { name: s.mother.name })),
-    h('div', { class: 'row' }, h('span', { class: 'who' }, t('born.name')), name, btn),
+    h('div', { class: 'row' }, h('span', { class: 'who' }, t('born.name')), name, dice, btn),
     err,
     slimeCard(child, { showNix: true }),
     h('div', { class: 'small' }, t('born.no', { n: child.id })),
@@ -396,7 +401,7 @@ function fightTop(s: Session): HTMLElement {
     e.preventDefault();
     void guarded(btn, err, async () => {
       const token = s.token;
-      const r = await api.fight(token, name.value);
+      const r = await api.fight(token, name.value.trim() || randomName());
       // the form stays up as the "born" card; results play in the bottom frame
       session = null;
       banner = !identity && settings.cooldownMin > 0 ? t('result.again', { n: settings.cooldownMin }) : '';
