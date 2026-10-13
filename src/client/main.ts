@@ -7,6 +7,7 @@ import { fxEnabled, hatch, setFx, sparkleAt, startAmbient } from './fx.ts';
 import { guideView } from './guide.ts';
 import { errorText, getLang, setLang, t } from './i18n.ts';
 import { hallView, lineageView, lineagesView, rankView, titlesView } from './lists.ts';
+import { settings, loadSettings } from './settings.ts';
 import { BG2_STRIP, BG_STRIP } from './sprites.gen.ts';
 import { battleReport, fmtDate, isMobile, mobileQuery, roundDetails, slimeCard } from './views.ts';
 
@@ -300,7 +301,7 @@ function fightTop(s: Session): HTMLElement {
       const r = await api.fight(token, name.value);
       // the form stays up as the "born" card; results play in the bottom frame
       session = null;
-      banner = t('result.again', { n: 15 });
+      banner = settings.cooldownMin > 0 ? t('result.again', { n: settings.cooldownMin }) : '';
       await playResults(r);
     })();
   });
@@ -427,4 +428,4 @@ mobileQuery().addEventListener('change', renderAll);
 
 document.documentElement.lang = getLang();
 startAmbient();
-renderAll();
+void loadSettings().finally(renderAll);

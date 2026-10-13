@@ -11868,6 +11868,18 @@ var Hono3 = class extends Hono {
   }
 };
 
+// src/shared/ladder.ts
+var RANK_SIZE = 50;
+var ALWAYS_FOUGHT = 3;
+var HALL_MIN_DEFENSES = 4;
+var SEED_GAGE = RANK_SIZE * 10;
+function cutLength(lowestPoints) {
+  return Math.max(0, String(Math.trunc(lowestPoints)).length - 2);
+}
+var scalePoints = (points, cut) => Math.trunc(points / 10 ** cut);
+var mustFight = (rank, opponentPoints, challengerPoints) => opponentPoints >= challengerPoints || rank <= ALWAYS_FOUGHT;
+var DEFAULT_COOLDOWN_MIN = 5;
+
 // src/server/db.ts
 var SCHEMA_VERSION = 3;
 var TABLES = [
@@ -12190,17 +12202,6 @@ function kindOf(p) {
   return kind;
 }
 
-// src/shared/ladder.ts
-var RANK_SIZE = 50;
-var ALWAYS_FOUGHT = 3;
-var HALL_MIN_DEFENSES = 4;
-var SEED_GAGE = RANK_SIZE * 10;
-function cutLength(lowestPoints) {
-  return Math.max(0, String(Math.trunc(lowestPoints)).length - 2);
-}
-var scalePoints = (points, cut) => Math.trunc(points / 10 ** cut);
-var mustFight = (rank, opponentPoints, challengerPoints) => opponentPoints >= challengerPoints || rank <= ALWAYS_FOUGHT;
-
 // src/shared/lineage.ts
 var ZERO_LIN = { no: 0, name: "", nx: "0000000" };
 var zeroBlood = () => [{ ...ZERO_LIN }, { ...ZERO_LIN }, { ...ZERO_LIN }, { ...ZERO_LIN }];
@@ -12336,7 +12337,7 @@ var Game = class _Game {
     this.db = db;
     this.rng = opts.rng ?? Math.random;
     this.now = opts.now ?? Date.now;
-    this.cooldownMs = (opts.cooldownMin ?? 15) * 6e4;
+    this.cooldownMs = (opts.cooldownMin ?? DEFAULT_COOLDOWN_MIN) * 6e4;
     this.inactivityMs = (opts.inactivityDays ?? 7) * DAY;
     this.seed = opts.seedLadder ?? true;
   }
@@ -12346,6 +12347,10 @@ var Game = class _Game {
   cooldownMs;
   inactivityMs;
   seed;
+  /** minutes between plays, for clients that explain the wait */
+  get cooldownMin() {
+    return this.cooldownMs / 6e4;
+  }
   /** The schema must already exist (see `initSchema`). Seeds an empty world unless disabled. */
   static async create(db, opts = {}) {
     const g = new _Game(db, opts);
@@ -12915,6 +12920,12 @@ function dbConfig(env = process.env) {
   const url = (raw2 || `file:${env.SLIME_DB ?? "slime.db"}`).replace(/^libsql:\/\//, "https://");
   return { url, authToken: env.TURSO_AUTH_TOKEN?.trim() || void 0 };
 }
+function cooldownFromEnv(env = process.env) {
+  const raw2 = env.SLIME_COOLDOWN_MIN?.trim();
+  if (!raw2) return DEFAULT_COOLDOWN_MIN;
+  const n = Number(raw2);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_COOLDOWN_MIN;
+}
 function describeError(e, env = process.env) {
   let msg = e instanceof Error ? e.message : String(e);
   for (const secret of [env.TURSO_AUTH_TOKEN, env.CRON_SECRET]) if (secret && secret.length > 4) msg = msg.split(secret.trim()).join("***");
@@ -12926,7 +12937,7 @@ function sharedGame() {
     const { url, authToken } = dbConfig();
     const db = await openDb(url, authToken);
     await initSchema(db);
-    return Game.create(db, { cooldownMin: Number(process.env.SLIME_COOLDOWN_MIN ?? 15) });
+    return Game.create(db, { cooldownMin: cooldownFromEnv() });
   })().catch((e) => {
     shared = null;
     throw e;
@@ -12977,6 +12988,7 @@ function createApp(getGame = sharedGame) {
     const b = await body(c);
     return c.json(await (await getGame()).fight(str(b.token), str(b.name)));
   });
+  app2.get("/api/config", async (c) => c.json({ cooldownMin: (await getGame()).cooldownMin }));
   app2.get("/api/rank", async (c) => c.json({ slimes: await (await getGame()).ranking() }));
   app2.get("/api/lineages", async (c) => c.json({ lineages: await (await getGame()).lineages() }));
   app2.get("/api/lineage/:no", async (c) => c.json(await (await getGame()).lineage(Number(c.req.param("no")), c.req.query("token") || void 0)));

@@ -22,3 +22,10 @@ export const scalePoints = (points: number, cut: number) => Math.trunc(points / 
  */
 export const mustFight = (rank: number, opponentPoints: number, challengerPoints: number) =>
   opponentPoints >= challengerPoints || rank <= ALWAYS_FOUGHT;
+
+/**
+ * Default wait between two plays of one account. The original used 15 minutes (and 30-45 in the plus edition)
+ * to spare its CGI server; a hosted database copes with far more, so this is shorter and configurable
+ * (SLIME_COOLDOWN_MIN, 0 = no waiting).
+ */
+export const DEFAULT_COOLDOWN_MIN = 5;

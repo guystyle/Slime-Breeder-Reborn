@@ -13,7 +13,7 @@ export async function makeGame(opts: ServiceOptions = {}): Promise<{ g: Game; db
   dirs.push(dir);
   const db = await openDb(`file:${join(dir, 'test.db')}`);
   await initSchema(db);
-  const g = await Game.create(db, { cooldownMin: 0, ...opts });
+  const g = await Game.create(db, { ...('cooldownMin' in opts ? {} : { cooldownMin: 0 }), ...opts });
   return { g, db };
 }
 

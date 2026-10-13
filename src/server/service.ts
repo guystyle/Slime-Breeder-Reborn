@@ -2,7 +2,7 @@ import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { type BattleReport, fight } from '../shared/battle.ts';
 import { type ErrorCode, ERROR_TEXT } from '../shared/errors.ts';
 import { type Dna, type Kind, colorOf, eveDna, express, kindOf, mix, mutate } from '../shared/dna.ts';
-import { HALL_MIN_DEFENSES, RANK_SIZE, SEED_GAGE, cutLength, mustFight, scalePoints } from '../shared/ladder.ts';
+import { DEFAULT_COOLDOWN_MIN, HALL_MIN_DEFENSES, RANK_SIZE, SEED_GAGE, cutLength, mustFight, scalePoints } from '../shared/ladder.ts';
 import { type Blood, type Lin, STAT_KEYS, affinityPrint, branchNx, inherit, nixOf, poorMatch, zeroBlood } from '../shared/lineage.ts';
 import { type Rng } from '../shared/rng.ts';
 import type { Db, Stmt, Store } from './store.ts';
@@ -84,7 +84,7 @@ interface UserRow {
 export interface ServiceOptions {
   rng?: Rng;
   now?: () => number;
-  /** minutes between plays per user; 0 disables */
+  /** minutes between plays per user (default DEFAULT_COOLDOWN_MIN); 0 disables */
   cooldownMin?: number;
   inactivityDays?: number;
   /** populate an empty database with founder slimes so the first player has mates (default true) */
@@ -105,13 +105,18 @@ export class Game {
   private readonly inactivityMs: number;
   private readonly seed: boolean;
 
+  /** minutes between plays, for clients that explain the wait */
+  get cooldownMin(): number {
+    return this.cooldownMs / 60_000;
+  }
+
   private constructor(
     private readonly db: Db,
     opts: ServiceOptions = {},
   ) {
     this.rng = opts.rng ?? Math.random;
     this.now = opts.now ?? Date.now;
-    this.cooldownMs = (opts.cooldownMin ?? 15) * 60_000;
+    this.cooldownMs = (opts.cooldownMin ?? DEFAULT_COOLDOWN_MIN) * 60_000;
     this.inactivityMs = (opts.inactivityDays ?? 7) * DAY;
     this.seed = opts.seedLadder ?? true;
   }

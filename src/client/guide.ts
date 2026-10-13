@@ -1,5 +1,6 @@
 import { h } from './dom.ts';
 import { type Lang, getLang } from './i18n.ts';
+import { settings } from './settings.ts';
 
 interface Block {
   h: string;
@@ -17,10 +18,10 @@ const KO: Block[] = [
       '② 내 슬라임이 표시됩니다. 마음에 드는 교배 상대를 골라 「교배」를 누르세요. 씨가 없는 슬라임은 고를 수 없습니다.',
       '③ 새로 태어난 슬라임이 표시됩니다. 이름을 붙여 주세요. 「이름은 아직 없음」은 너무 불쌍하니까요.',
       '④ 「전투 개시」를 누르면 전투 결과가 표시됩니다. 전투는 모두 자동으로 진행되며, 지시도 도움도 줄 수 없습니다. 랭킹 하위부터 포인트에 따라 질 때까지 차례로 싸웁니다.',
-      '⑤ 이겼다면 아래 프레임의 「랭킹」을 눌러 몇 위가 되었는지 확인하세요. 졌다면 15분 뒤에 다시 도전하세요.',
+      '⑤ 이겼다면 아래 프레임의 「랭킹」을 눌러 몇 위가 되었는지 확인하세요. 졌다면 다시 도전하세요{wait}.',
     ],
     after: [
-      '・서버 부하를 줄이기 위해 15분에 한 번만 플레이할 수 있습니다.',
+      '・{cd}분에 한 번만 플레이할 수 있습니다.',
       '・7일 동안 플레이하지 않은 계정은 삭제됩니다(랭킹에 있는 슬라임은 남습니다).',
       '・슬라임은 한 번 교배할 때마다 1세대 진행되며, 유저는 자손에게 계속 교배시키는 것만 할 수 있습니다. 한 번 싸운 슬라임은 더 이상 손댈 수 없습니다.',
       '・같은 사용자명으로는 슬라임을 한 마리만 다룰 수 있습니다.',
@@ -141,10 +142,10 @@ const EN: Block[] = [
       '2. Your slime is shown. Pick a mate and press Mate! Slimes with no seeds left cannot be chosen.',
       '3. The newborn is shown. Give it a name.',
       '4. Press Fight! The battle is fully automatic. It fights up from the bottom of the ranking, against slimes with at least its points, until it loses.',
-      '5. If it did well, open the Ranking in the lower frame to see where it ended up. If it lost, try again in 15 minutes.',
+      '5. If it did well, open the Ranking in the lower frame to see where it ended up. If it lost, try again{wait}.',
     ],
     after: [
-      '· You can play once per 15 minutes to spare the server.',
+      '· You can play once per {cd} minutes.',
       '· Accounts idle for 7 days are deleted (ranked slimes stay).',
       '· Each mating advances one generation; you can only keep mating with your descendants. A slime that has fought cannot be touched again.',
       '· One slime per username.',
@@ -204,13 +205,20 @@ const EN: Block[] = [
 
 const GUIDES: Record<Lang, Block[]> = { ko: KO, en: EN };
 
+/** Fill in the server's play interval; with no waiting at all the sentences about it are dropped. */
+const fill = (lines: string[] | undefined) => {
+  const cd = settings.cooldownMin;
+  const wait = cd > 0 ? (getLang() === 'ko' ? ` (${cd}분 뒤부터 가능)` : ` in ${cd} minutes`) : '';
+  return (lines ?? []).filter((l) => cd > 0 || !/^[・·] ?\{cd\}/.test(l)).map((l) => l.replace(/\{cd\}/g, String(cd)).replace('{wait}', wait));
+};
+
 export function guideView(): HTMLElement {
   const root = h('div', { class: 'guide' }, h('h2', { class: 'section-title gold' }, getLang() === 'ko' ? '설명서' : 'Instructions'));
   for (const b of GUIDES[getLang()]) {
     root.append(h('h3', { class: 'shine-cyan' }, `★ ${b.h}`));
-    for (const para of b.p ?? []) root.append(h('p', {}, para));
+    for (const para of fill(b.p)) root.append(h('p', {}, para));
     if (b.rows) root.append(h('table', {}, ...b.rows.map(([a, c]) => h('tr', {}, h('td', { class: 'statname' }, a), h('td', {}, c)))));
-    for (const para of b.after ?? []) root.append(h('p', {}, para));
+    for (const para of fill(b.after)) root.append(h('p', {}, para));
   }
   return root;
 }

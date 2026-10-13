@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp, dbConfig, describeError } from './app.ts';
 import { cleanupGames, makeGame } from './testkit.ts';
 import { afterAll } from 'vitest';
+import { seeded } from '../shared/rng.ts';
 
 afterAll(cleanupGames);
 
@@ -49,5 +50,36 @@ describe('health endpoint', () => {
     expect(body.message).toContain('401');
     const api = await app.request('/api/rank');
     expect(((await api.json()) as { detail: string }).detail).toContain('401');
+  });
+});
+
+describe('play interval setting', () => {
+  it('defaults to 5 minutes and accepts 0 or other values', async () => {
+    const { cooldownFromEnv } = await import('./app.ts');
+    expect(cooldownFromEnv({})).toBe(5);
+    expect(cooldownFromEnv({ SLIME_COOLDOWN_MIN: '0' })).toBe(0);
+    expect(cooldownFromEnv({ SLIME_COOLDOWN_MIN: ' 2 ' })).toBe(2);
+    expect(cooldownFromEnv({ SLIME_COOLDOWN_MIN: 'abc' })).toBe(5);
+    expect(cooldownFromEnv({ SLIME_COOLDOWN_MIN: '-3' })).toBe(5);
+  });
+
+  it('is reported to clients by /api/config', async () => {
+    const { g } = await makeGame({ cooldownMin: 7 });
+    const res = await createApp(async () => g).request('/api/config');
+    expect(((await res.json()) as { cooldownMin: number }).cooldownMin).toBe(7);
+  });
+
+  it('a game without an explicit value waits 5 minutes between plays', async () => {
+    let t = 1_000_000;
+    const { g } = await makeGame({ cooldownMin: undefined, now: () => t, rng: seeded(3) });
+    expect(g.cooldownMin).toBe(5);
+    const e = await g.enter('quick', 'pw');
+    if (!e.ok) throw new Error('enter');
+    await g.mate(e.token, e.mates[0]!.id);
+    await g.fight(e.token, 'Q');
+    t += 4 * 60_000;
+    await expect(g.enter('quick', 'pw')).rejects.toThrow(/once per 5 minutes/);
+    t += 2 * 60_000;
+    await expect(g.enter('quick', 'pw')).resolves.toBeTruthy();
   });
 });

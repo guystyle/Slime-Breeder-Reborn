@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { DEFAULT_COOLDOWN_MIN } from '../shared/ladder.ts';
 import { initSchema } from './db.ts';
 import { Game, GameError } from './service.ts';
 import { openDb } from './store.ts';
@@ -19,6 +20,14 @@ export function dbConfig(env: Record<string, string | undefined> = process.env) 
   return { url, authToken: env.TURSO_AUTH_TOKEN?.trim() || undefined };
 }
 
+/** SLIME_COOLDOWN_MIN, falling back to the default when unset or not a non-negative number. */
+export function cooldownFromEnv(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.SLIME_COOLDOWN_MIN?.trim();
+  if (!raw) return DEFAULT_COOLDOWN_MIN;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_COOLDOWN_MIN;
+}
+
 /** Error text that is safe to show: secrets removed, length capped. */
 export function describeError(e: unknown, env: Record<string, string | undefined> = process.env): string {
   let msg = e instanceof Error ? e.message : String(e);
@@ -34,7 +43,7 @@ export function sharedGame(): Promise<Game> {
     const { url, authToken } = dbConfig();
     const db = await openDb(url, authToken);
     await initSchema(db);
-    return Game.create(db, { cooldownMin: Number(process.env.SLIME_COOLDOWN_MIN ?? 15) });
+    return Game.create(db, { cooldownMin: cooldownFromEnv() });
   })().catch((e) => {
     shared = null;
     throw e;
@@ -92,6 +101,8 @@ export function createApp(getGame: () => Promise<Game> = sharedGame): Hono {
     const b = await body(c);
     return c.json(await (await getGame()).fight(str(b.token), str(b.name)));
   });
+  // public settings the client needs to explain the rules
+  app.get('/api/config', async (c) => c.json({ cooldownMin: (await getGame()).cooldownMin }));
   app.get('/api/rank', async (c) => c.json({ slimes: await (await getGame()).ranking() }));
   app.get('/api/lineages', async (c) => c.json({ lineages: await (await getGame()).lineages() }));
   app.get('/api/lineage/:no', async (c) => c.json(await (await getGame()).lineage(Number(c.req.param('no')), c.req.query('token') || undefined)));
