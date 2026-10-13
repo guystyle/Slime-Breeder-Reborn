@@ -1,6 +1,7 @@
 import type { BattleReport } from '../shared/battle.ts';
 import type { SlimeView } from '../shared/types.ts';
 import { h } from './dom.ts';
+import { t } from './i18n.ts';
 import { confetti, floatText, reduceMotion, sleep } from './fx.ts';
 import { sprite } from './sprite.ts';
 
@@ -43,8 +44,8 @@ export interface Arena {
 export function arena(me: Pick<SlimeView, 'name' | 'color' | 'kind' | 'px'>, foe: SlimeView, rep: BattleReport, title: boolean): Arena {
   const A = side(me, rep.a.maxHp, false);
   const B = side(foe, rep.b.maxHp, true);
-  const caption = h('div', { class: 'arena-caption' }, title ? 'TITLE MATCH!' : 'Fight!');
-  const skipBtn = h('button', { type: 'button', class: 'skip' }, 'Skip ▸▸');
+  const caption = h('div', { class: 'arena-caption' }, title ? t('battle.title') : t('battle.fight'));
+  const skipBtn = h('button', { type: 'button', class: 'skip' }, t('battle.skip'));
   const el = h('div', { class: 'arena' + (title ? ' title-match' : '') }, caption, h('div', { class: 'arena-row' }, A.root, h('div', { class: 'vs' }, 'VS'), B.root), skipBtn);
 
   let skipped = false;
@@ -91,10 +92,10 @@ export function arena(me: Pick<SlimeView, 'name' | 'color' | 'kind' | 'px'>, foe
       if (skipped) break;
       if (ev.hit) {
         void shake(def);
-        floatText(def.body, ev.crit ? `CRITICAL! -${ev.dmg}` : `-${ev.dmg}`, ev.crit ? 'dmg crit' : 'dmg');
+        floatText(def.body, ev.crit ? `${t('battle.crit')} -${ev.dmg}` : `-${ev.dmg}`, ev.crit ? 'dmg crit' : 'dmg');
       } else {
         void dodge(def);
-        floatText(def.body, 'miss', 'miss');
+        floatText(def.body, t('battle.miss'), 'miss');
       }
       setBars(A, ev.hpA, rep.a.maxHp, ev.stmA);
       setBars(B, ev.hpB, rep.b.maxHp, ev.stmB);
@@ -112,7 +113,7 @@ export function arena(me: Pick<SlimeView, 'name' | 'color' | 'kind' | 'px'>, foe
       setBars(B, last.hpB, rep.b.maxHp, last.stmB);
     }
     skipBtn.remove();
-    caption.textContent = win ? (title ? 'New champion!' : 'Victory!') : 'Defeated…';
+    caption.textContent = win ? (title ? t('battle.champion') : t('battle.victory')) : t('battle.defeat');
     caption.classList.add(win ? 'win' : 'lose');
     const [w, l] = win ? [A, B] : [B, A];
     l.body.animate([{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(1.1,0.5) translateY(28px)', opacity: 0.45 }], { duration: 500, fill: 'forwards', easing: 'ease-in' });

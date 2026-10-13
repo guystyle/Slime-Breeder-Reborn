@@ -1,5 +1,6 @@
 import type { BattleReport } from './battle.ts';
 import type { Kind } from './dna.ts';
+import type { Blood } from './lineage.ts';
 import type { ShownStats, Stats } from './stats.ts';
 
 /** Compact ancestry tree: `a` is the owner's side, `b` the mate's side. */
@@ -9,6 +10,8 @@ export interface Pedigree {
   gen: number;
   a?: Pedigree;
   b?: Pedigree;
+  /** the mate was an unknown seed */
+  unknown?: boolean;
 }
 
 export interface SlimeView {
@@ -24,6 +27,10 @@ export interface SlimeView {
   color: string;
   /** visible mutant type (cosmetic) */
   kind: Kind;
+  /** four bloodline slots: mother's mother's father, mother's father, father's mother's father, father (own line) */
+  lineage: Blood;
+  /** lineage compatibility symbols of this birth, one per stat */
+  nix: string;
   /** sprite edge in px */
   px: number;
   seeds: number;
@@ -44,6 +51,8 @@ export interface MateCandidate {
   rank: number;
   name: string;
   gen: number;
+  /** 'hall': a legend whose lineage has left the ranking (no seed needed) */
+  from: 'rank' | 'hall';
 }
 
 export type EnterResponse =
@@ -107,4 +116,43 @@ export interface CommentView {
   at: string;
   user: string;
   text: string;
+}
+
+export interface LineageRow {
+  rank: number;
+  no: number;
+  name: string;
+  /** stat the lineage favours: 0..5 = HP STM STR DEX AGL SPD */
+  type: number;
+  count: number;
+  percent: number;
+  /** founder first, then each branch, ending with this lineage */
+  chain: { no: number; name: string }[];
+}
+
+export interface LineageSlime {
+  slime: SlimeView;
+  /** a poor match for the viewer's slime (drawn orange) */
+  orange: boolean;
+  /** number of different lineages a child with the viewer's slime would stand on */
+  variety: number | null;
+}
+
+export interface LineageDetail {
+  lineage: { no: number; name: string; type: number } | null;
+  slimes: LineageSlime[];
+  fromHall: boolean;
+}
+
+export interface NixTable {
+  mine: Blood;
+  rows: { no: number; name: string; type: number; count: number; print: string }[];
+}
+
+export interface TitleMatchLog {
+  at: string;
+  challenger: SlimeView;
+  champion: SlimeView;
+  report: BattleReport;
+  championHeld: boolean;
 }

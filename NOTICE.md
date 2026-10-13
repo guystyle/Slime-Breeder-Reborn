@@ -9,8 +9,8 @@ The author's readme (kept unmodified in
 [`licenses/SLIME-BREEDER-plus-readme.txt`](licenses/SLIME-BREEDER-plus-readme.txt)) allows modified
 redistribution from v1.07 on, under conditions this project follows:
 
-- **Your own ideas added:** new web stack (TypeScript, SQLite, Vite), English UI, animated battle
-  replay, newly drawn SVG art, tests, and the rule adaptations to the English edition listed in the README.
+- **Your own ideas added:** new web stack (TypeScript, SQLite, Vite), Korean and English UI, animated
+  battle replay, particle and text effects, tests, and the rule adaptations listed in the README.
 - **Readme attached:** see the file above.
 - **Author's copyright and link kept** in the page footer, and the footer shows that this is a
   modified version with the modifier's link.
@@ -20,6 +20,9 @@ redistribution from v1.07 on, under conditions this project follows:
 
 Ported from the original source (algorithms re-implemented, not copied line by line): gene structure and
 expression, status formulas, mutant conditions, battle engine, point transfer and ladder flow, seed
-regrowth. Left out on purpose: the bloodline ("keito") and nicks system, which the English edition does not have.
+regrowth, and the bloodline ("keito") and nicks system. Not ported: the players' skill ranking page and the
+admin "god mode" pages.
 
-Sprites are redrawn as SVG. The original GIF artwork is **not** included.
+**Artwork:** the slime sprites and the two panel background strips are tatuta's GIFs from the plus v1.08
+package. They are included converted to PNG (`src/client/sprites.gen.ts`, produced by
+`scripts/convert_sprites.py`) under the redistribution terms above. The pixel art itself was not altered.

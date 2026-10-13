@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 
 /** Bump when the stored slime format changes; older databases are refused rather than misread. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export function openDb(path: string): DatabaseSync {
   const db = new DatabaseSync(path);
@@ -38,6 +38,9 @@ export function openDb(path: string): DatabaseSync {
       color TEXT NOT NULL,
       kind TEXT NOT NULL,
       sperm INTEGER NOT NULL DEFAULT 0,
+      blood TEXT NOT NULL,
+      nix TEXT NOT NULL DEFAULT '××××××',
+      hall INTEGER NOT NULL DEFAULT 0,
       born INTEGER NOT NULL,
       seeds INTEGER NOT NULL,
       children INTEGER NOT NULL DEFAULT 0,
@@ -62,7 +65,19 @@ export function openDb(path: string): DatabaseSync {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       at INTEGER NOT NULL,
       defenses INTEGER NOT NULL,
+      slime_id INTEGER NOT NULL,
       snapshot TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS lineages (
+      no INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      nx TEXT NOT NULL,
+      old TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE TABLE IF NOT EXISTS title_matches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      at INTEGER NOT NULL,
+      data TEXT NOT NULL
     );
   `);
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);

@@ -1,5 +1,9 @@
 import { h } from './dom.ts';
 import { sprite } from './sprite.ts';
+import { BG_STRIP } from './sprites.gen.ts';
+
+document.body.classList.add('gallery');
+document.documentElement.style.setProperty('--bg-strip', `url(${BG_STRIP})`);
 
 import type { Kind } from '../shared/dna.ts';
 import { KINDS } from '../shared/dna.ts';

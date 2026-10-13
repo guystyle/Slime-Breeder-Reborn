@@ -219,3 +219,123 @@ describe('original ladder mechanics', () => {
     expect(f.slime.color).toMatch(/^#[0-9a-f]{6}$/);
   });
 });
+
+describe('bloodlines', () => {
+  const rawDb = (g: Game) => (g as unknown as { db: import('node:sqlite').DatabaseSync }).db;
+  const STRONG = { weight: 250, hp: 90000, stm: 90000, str: 9000, dex: 9000, agl: 9000, cst: 250, sex: 50, spd: 9000 };
+  const WEAK = { weight: 50, hp: 50, stm: 500, str: 5, dex: 50, agl: 5, cst: 50, sex: 50, spd: 5 };
+
+  it('founders each start their own lineage', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(1), cooldownMin: 0 });
+    const r = g.ranking();
+    const nos = new Set(r.map((s) => s.lineage[3].no));
+    expect(nos.size).toBe(r.length);
+    expect(r.every((s) => s.lineage[3].name === s.name)).toBe(true);
+    expect(g.lineages()).toHaveLength(r.length);
+  });
+
+  it('a child joins the mate\'s lineage and passes on the mother\'s father lineage', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(2), cooldownMin: 0 });
+    const e = g.enter('bloodline', 'pw');
+    if (!e.ok) throw new Error('enter');
+    const mate = g.ranking().find((s) => s.id === e.mates[2]!.id)!;
+    const child = g.mate(e.token, mate.id).child;
+    expect(child.lineage[3]).toEqual(mate.lineage[3]);
+    expect(child.lineage[1]).toEqual(e.mother.lineage[3]);
+    expect(child.nix).toMatch(/^.{6,}$/);
+  });
+
+  it('an unknown seed founds a new lineage named after the newborn once it is named', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(3), cooldownMin: 0 });
+    const e = g.enter('founder', 'pw');
+    if (!e.ok) throw new Error('enter');
+    const m = g.mate(e.token, 'no');
+    expect(m.child.pedigree!.b!.unknown).toBe(true);
+    expect(m.child.lineage[3].no).toBe(m.child.id);
+    const f = g.fight(e.token, 'Pioneer');
+    expect(f.slime.lineage[3].name).toBe('Pioneer');
+    const reg = rawDb(g).prepare('SELECT name FROM lineages WHERE no = ?').get(m.child.id) as { name: string } | undefined;
+    expect(reg?.name).toBe('Pioneer');
+  });
+
+  it('beating the whole ladder branches a new lineage that remembers its origin', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(4), cooldownMin: 0 });
+    const db = rawDb(g);
+    db.prepare('UPDATE slimes SET stats = ?').run(JSON.stringify(WEAK));
+    const e = g.enter('champion', 'pw');
+    if (!e.ok) throw new Error('enter');
+    const before = g.ranking().find((s) => s.id === e.mates[0]!.id)!;
+    const c = g.mate(e.token, before.id).child;
+    db.prepare('UPDATE slimes SET stats = ? WHERE id = ?').run(JSON.stringify(STRONG), c.id);
+    const f = g.fight(e.token, 'Newline');
+    expect(f.steps.every((s) => s.won)).toBe(true);
+    expect(f.slime.rank).toBe(1);
+    expect(f.slime.lineage[3].no).toBe(c.id);
+    expect(f.slime.lineage[3].name).toBe('Newline');
+    const row = g.lineages().find((l) => l.no === c.id)!;
+    expect(row.chain.at(-2)!.no).toBe(before.lineage[3].no);
+    expect(row.chain.at(-1)!.name).toBe('Newline');
+  });
+
+  it('a champion dethroned after 4+ defenses enters the Hall of Fame with a congratulation note', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(8), cooldownMin: 0 });
+    const db = rawDb(g);
+    db.prepare('UPDATE slimes SET stats = ?').run(JSON.stringify(WEAK));
+    const champ = g.ranking()[0]!;
+    db.prepare('UPDATE slimes SET defenses = 4 WHERE id = ?').run(champ.id);
+    const e = g.enter('usurper', 'pw');
+    if (!e.ok) throw new Error('enter');
+    const c = g.mate(e.token, e.mates[3]!.id).child;
+    db.prepare('UPDATE slimes SET stats = ? WHERE id = ?').run(JSON.stringify(STRONG), c.id);
+    g.fight(e.token, 'Usurper');
+    expect(g.hall()).toHaveLength(1);
+    expect(g.hall()[0]!.slime.id).toBe(champ.id);
+    expect(g.hall()[0]!.defenses).toBe(4);
+    expect(g.comments().some((x) => x.user === '@hall' && x.text.startsWith(`${champ.name}|`))).toBe(true);
+    expect((db.prepare('SELECT hall FROM slimes WHERE id = ?').get(champ.id) as { hall: number }).hall).toBe(1);
+  });
+
+  it('players cannot post as a system note', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(9), cooldownMin: 0 });
+    g.addComment('@hall', 'fake');
+    expect(g.comments()[0]!.user).toBe('hall');
+  });
+
+  it('legends whose lineage died out can be mated with from the Hall of Fame without spending seeds', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(5), cooldownMin: 0 });
+    const db = rawDb(g);
+    const legend = g.ranking()[3]!;
+    db.prepare('UPDATE slimes SET ranked = 0, champ = 0, hall = 1, seeds = 4 WHERE id = ?').run(legend.id);
+    const e = g.enter('reviver', 'pw');
+    if (!e.ok) throw new Error('enter');
+    expect(e.mates.find((m) => m.id === legend.id)?.from).toBe('hall');
+    g.mate(e.token, legend.id);
+    expect((db.prepare('SELECT seeds FROM slimes WHERE id = ?').get(legend.id) as { seeds: number }).seeds).toBe(4);
+  });
+
+  it('lists a lineage\'s slimes and the compatibility table', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(6), cooldownMin: 0 });
+    const e = g.enter('viewer', 'pw');
+    if (!e.ok) throw new Error('enter');
+    const target = g.ranking()[1]!;
+    const d = g.lineage(target.lineage[3].no, e.token);
+    expect(d.slimes.map((s) => s.slime.id)).toContain(target.id);
+    expect(d.slimes[0]!.variety).toBeGreaterThan(0);
+    const t = g.nixTable(e.token);
+    expect(t.rows.length).toBeGreaterThanOrEqual(10);
+    expect(t.rows[0]!.print).toHaveLength(6);
+  });
+
+  it('purging idle accounts keeps their ranked slimes', () => {
+    let now = 0;
+    const g = new Game(openDb(':memory:'), { rng: seeded(7), cooldownMin: 0, now: () => now });
+    const e = g.enter('idler', 'pw');
+    if (!e.ok) throw new Error('enter');
+    g.mate(e.token, e.mates[0]!.id);
+    g.fight(e.token, 'Stay');
+    const ranked = g.ranking().length;
+    now = 30 * 86_400_000;
+    expect(g.purgeInactive()).toBe(1);
+    expect(g.ranking().length).toBe(ranked);
+  });
+});

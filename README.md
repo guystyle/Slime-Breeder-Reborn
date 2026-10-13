@@ -38,18 +38,39 @@ Requires Node >= 22.13 (built-in `node:sqlite`). A database from an older schema
   Hall of Fame. Seeds regrow from each slime's fertility (SEX) every time anyone mates.
 - Accounts: name + password (scrypt-hashed), one slime per account, 15-minute play cooldown, 7 days idle = deleted.
 
+- **Bloodlines (keito):** four lineage slots per slime, a child always joins its father's lineage. A 7-digit
+  code per lineage (six stat affinities + a type) drives the **nicks** boost on a newborn's stats when affinity
+  digits add up to 5 and the four lineages are all different. New lineages come from an **unknown seed**
+  (named after the newborn) or from a slime that tops the ladder unbeaten (branch lineage with its genealogy).
+  Lineage census, lineage detail with poor-match highlighting, and the compatibility list when choosing a mate.
+- **Hall of Fame legends** whose lineage has left the ranking can be mated with (no seed needed), reviving it.
+- **Artwork:** the original sprite GIFs (colour-mask + details), see NOTICE.md.
+
+## Look and feel
+
+Early-web look: black page, cyan links, Win95-style beveled controls, and a two-frame layout (title/game
+above, results/ranking below, draggable divider) like the original frameset. On top of it: shimmering text,
+wavy rainbow logo, ticker for new Hall of Fame entries, an ambient particle layer (bubbles, stars, cursor
+sparkles; click bursts), animated battle replay, egg hatching and confetti. Effects can be switched off with
+the "effects" button and are disabled by `prefers-reduced-motion`.
+
+## Languages
+
+Korean (default) and English, switchable in the top right; server errors are codes translated by the client.
+
 ## What is new in this version
 
-TypeScript + Hono + SQLite server, Vite client, animated hatch / battle replay / effects, newly drawn SVG
-slimes, tests (including checks against numbers from the original's ranking page and guide).
+TypeScript + Hono + SQLite server, Vite client, the UI features above, tests (including checks against numbers
+from the original's ranking page and guide). Regenerate sprites with
+`python3 scripts/convert_sprites.py <dir with slm*.gif> src/client/sprites.gen.ts` (needs Pillow).
 
 ## Known gaps vs. the original
 
-- The **bloodline ("keito") and nicks system** of the plus edition is not implemented (the English edition has none).
+- The players' skill ranking ("participants") and the admin pages of the plus edition are not ported.
 - The English edition showed five stats; the plus engine has a sixth, **AGL** (evasion), which is used here.
 - Which long-run balance the world settles into (the English ranking sat at weight ~250) is not verified.
 - Numbers of the English edition could only be checked by shape (attack counts, luck averages), not exactly.
 
 ## Layout
 
-`src/shared` (genes, stats, battle, ladder rules) · `src/server` (Hono API + SQLite) · `src/client` (Vite, vanilla TS)
+`src/shared` (genes, lineages, stats, battle, ladder rules) · `src/server` (Hono API + SQLite) · `src/client` (Vite, vanilla TS)

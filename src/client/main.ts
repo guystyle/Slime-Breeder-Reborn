@@ -1,45 +1,30 @@
-import type { EnterResponse, SlimeView } from '../shared/types.ts';
-import { api } from './api.ts';
-import { h, span } from './dom.ts';
+import type { EnterResponse, NixTable } from '../shared/types.ts';
+import { STAT_KEYS } from '../shared/lineage.ts';
+import { ApiError, api } from './api.ts';
 import { arena } from './arena.ts';
-import { hatch } from './fx.ts';
+import { h, span } from './dom.ts';
+import { fxEnabled, hatch, setFx, sparkleAt, startAmbient } from './fx.ts';
+import { guideView } from './guide.ts';
+import { errorText, getLang, setLang, t } from './i18n.ts';
+import { hallView, lineageView, lineagesView, rankView, titlesView } from './lists.ts';
+import { BG2_STRIP, BG_STRIP } from './sprites.gen.ts';
 import { battleReport, fmtDate, roundDetails, slimeCard } from './views.ts';
 
 type Session = Extract<EnterResponse, { ok: true }>;
 
-const app = document.getElementById('app')!;
 let session: Session | null = null;
+/** Content that replaces the routed bottom view (a fight in progress or its result) until the route changes. */
+let bottomOverride: HTMLElement | null = null;
+let banner = '';
 
-/** The author's copyright and link must stay (see NOTICE.md); this is a modified version, credited below. */
-const COPYRIGHT = h(
-  'footer',
-  {},
-  h('i', {}, h('b', {}, 'SLIME BREEDER'), ' (plus v1.08 rules) Copyright ©1999-2002 ', h('a', { href: 'http://www2j.biglobe.ne.jp/~tatuta/_MENU.htm', target: '_blank', rel: 'noopener' }, 'tatuta'), '.'),
-  h('br'),
-  h('i', {}, 'Modified version “Reborn” by ', h('a', { href: 'https://github.com/guystyle/Slime-Breeder-Reborn', target: '_blank', rel: 'noopener' }, 'guystyle'), ' — see NOTICE.md.'),
-);
+const app = document.getElementById('app')!;
+const root = document.documentElement;
+root.style.setProperty('--bg-strip', `url(${BG_STRIP})`);
+root.style.setProperty('--bg-strip2', `url(${BG2_STRIP})`);
 
-function nav(): HTMLElement {
-  return h(
-    'nav',
-    {},
-    h('a', { href: '#/' }, 'Home'),
-    ' / ',
-    h('a', { href: '#/guide' }, 'Instructions'),
-    ' / ',
-    h('a', { href: '#/rank' }, 'Ranking'),
-    ' / ',
-    h('a', { href: '#/hall' }, 'Hall of Fame'),
-    ' / ',
-    h('a', { href: '#/', onclick: () => { session = null; } }, 'Reload'),
-  );
-}
-
-function page(...content: (Node | string)[]) {
-  app.replaceChildren(nav(), ...content, h('hr'), COPYRIGHT);
-}
-
-const errorBox = () => h('div', { class: 'error', role: 'alert' });
+const showError = (box: HTMLElement, e: unknown) => {
+  box.textContent = e instanceof ApiError ? errorText(e.code, e.params) : e instanceof Error ? e.message : String(e);
+};
 
 /** Run an async action behind a button, surfacing errors into `box`. */
 function guarded(btn: HTMLButtonElement, box: HTMLElement, fn: () => Promise<void>) {
@@ -49,64 +34,133 @@ function guarded(btn: HTMLButtonElement, box: HTMLElement, fn: () => Promise<voi
     try {
       await fn();
     } catch (e) {
-      box.textContent = (e as Error).message;
+      showError(box, e);
       btn.disabled = false;
     }
   };
 }
+const errorBox = () => h('div', { class: 'error', role: 'alert' });
 
-// ---------- title / login ----------
+// ---------------------------------------------------------------------------
+// frame layout: a fixed top frame (title / game forms) and a scrolling bottom frame, like the original frameset
+// ---------------------------------------------------------------------------
 
-function bubbles(): HTMLElement {
-  const box = h('div', { class: 'bubbles', 'aria-hidden': 'true' });
-  for (let i = 0; i < 14; i++) {
-    const b = h('i');
-    b.style.setProperty('--s', `${8 + ((i * 7) % 22)}px`);
-    b.style.setProperty('--x', `${(i * 71) % 100}%`);
-    b.style.setProperty('--t', `${6 + ((i * 3) % 7)}s`);
-    b.style.setProperty('--w', `${-(i * 1.3)}s`);
-    b.style.setProperty('--dx', `${((i % 5) - 2) * 14}px`);
-    box.append(b);
+const top = h('div', { id: 'frame-top' });
+const divider = h('div', { id: 'divider', role: 'separator', 'aria-orientation': 'horizontal', title: '↕' });
+const bottom = h('div', { id: 'frame-bottom' });
+app.append(top, divider, bottom);
+
+divider.addEventListener('pointerdown', (e) => {
+  divider.setPointerCapture(e.pointerId);
+  const move = (ev: PointerEvent) => {
+    const y = ev.clientY - app.getBoundingClientRect().top;
+    top.style.height = `${Math.max(120, Math.min(innerHeight - 160, y))}px`;
+  };
+  divider.addEventListener('pointermove', move);
+  divider.addEventListener('pointerup', () => divider.removeEventListener('pointermove', move), { once: true });
+});
+
+function nav(): HTMLElement {
+  const link = (href: string, label: string, onclick?: () => void) => h('a', { href, ...(onclick ? { onclick } : {}) }, label);
+  const sep = () => ' / ';
+  return h(
+    'nav',
+    {},
+    link('#/', t('nav.home'), () => {
+      session = null;
+      banner = '';
+      bottomOverride = null;
+      renderAll();
+    }),
+    sep(),
+    link('#/guide', t('nav.guide')),
+    sep(),
+    link('#/rank', t('nav.rank')),
+    sep(),
+    link('#/lineages', t('nav.lineages')),
+    sep(),
+    link('#/hall', t('nav.hall')),
+    sep(),
+    link('#/titles', t('nav.titles')),
+    sep(),
+    link('#/', t('nav.reload'), () => {
+      session = null;
+      renderAll();
+    }),
+    h('span', { class: 'nav-right' },
+      h('button', { type: 'button', class: 'mini', onclick: () => { setFx(!fxEnabled()); renderTop(); } }, fxEnabled() ? t('nav.fx.off') : t('nav.fx.on')),
+      ' ',
+      h('button', { type: 'button', class: 'mini', onclick: () => { setLang(getLang() === 'ko' ? 'en' : 'ko'); renderAll(); } }, t('nav.lang')),
+    ),
+  );
+}
+
+const COPYRIGHT = () =>
+  h(
+    'footer',
+    {},
+    h('i', {}, h('b', {}, 'SLIME BREEDER'), ' (plus v1.08) ', t('footer.copy'), ' ', h('a', { href: 'http://www2j.biglobe.ne.jp/~tatuta/_MENU.htm', target: '_blank', rel: 'noopener' }, 'tatuta'), '.'),
+    h('br'),
+    h('i', {}, t('footer.mod'), ' ', h('a', { href: 'https://github.com/guystyle/Slime-Breeder-Reborn', target: '_blank', rel: 'noopener' }, 'guystyle'), ' — ', t('footer.notice')),
+  );
+
+// ---------------------------------------------------------------------------
+// top frame
+// ---------------------------------------------------------------------------
+
+function logo(): HTMLElement {
+  const word = (text: string, base: number) =>
+    h('span', { class: 'word' }, ...[...text].map((ch, i) => { const s = h('span', { class: 'ch' }, ch); s.style.setProperty('--i', String(base + i)); return s; }));
+  return h(
+    'div',
+    { class: 'logo-wrap' },
+    h('h1', { class: 'logo', 'aria-label': 'SLIME BREEDER' }, word('SLIME', 0), ' ', word('BREEDER', 5), h('sup', {}, '+')),
+    h('div', { class: 'tagline' }, t('title.tagline')),
+  );
+}
+
+async function ticker(): Promise<HTMLElement> {
+  const box = h('div', { class: 'marquee' });
+  try {
+    const { comments } = await api.comments();
+    const items = comments.filter((c) => c.user === '@hall').slice(0, 5).map((c) => {
+      const [name, gen, owner] = c.text.split('|');
+      return t('comment.hall', { name: name ?? '', gen: gen ?? '', owner: owner ?? '' });
+    });
+    if (items.length) box.append(h('span', { class: 'marquee-inner shine-gold' }, `★ ${items.join('   ★ ')} `));
+  } catch {
+    /* the ticker is decoration */
   }
   return box;
 }
 
-async function titleView() {
+async function titleTop(): Promise<HTMLElement> {
   const user = h('input', { type: 'text', size: 16, maxlength: 32, autocomplete: 'username' });
   const pass = h('input', { type: 'password', size: 8, maxlength: 8, autocomplete: 'current-password' });
   const err = errorBox();
-  const btn = h('button', { type: 'submit' }, 'Enter');
-  const form = h(
-    'form',
-    {},
-    'Username: ',
-    user,
-    ' Password: ',
-    pass,
-    ' ',
-    btn,
-  );
+  const btn = h('button', { type: 'submit' }, t('login.enter'));
+  const form = h('form', {}, `${t('login.user')} `, user, ` ${t('login.pass')} `, pass, ' ', btn);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     void guarded(btn, err, async () => {
       session = await api.enter(user.value, pass.value);
-      location.hash = '#/';
-      render();
+      banner = '';
+      renderTop();
     })();
   });
 
-  const cName = h('input', { type: 'text', size: 16, maxlength: 32, value: 'Name' });
-  const cText = h('input', { type: 'text', size: 60, maxlength: 300 });
-  const cBtn = h('button', { type: 'submit' }, 'Say It!');
+  const cName = h('input', { type: 'text', size: 12, maxlength: 32, value: t('comment.name') });
+  const cText = h('input', { type: 'text', size: 50, maxlength: 300 });
+  const cBtn = h('button', { type: 'submit' }, t('comment.say'));
   const cErr = errorBox();
   const list = h('div');
-  const cForm = h('form', {}, 'One-liner comments: ', cName, ' ', cText, ' ', cBtn, ' ', h('small', {}, '(must be less than 300 characters)'));
+  const cForm = h('form', {}, `${t('comment.label')} `, cName, ' ', cText, ' ', cBtn, ' ', h('small', {}, t('comment.limit')));
   const loadComments = async () => {
     const { comments } = await api.comments();
     list.replaceChildren(
-      ...comments.map((c) =>
-        h('div', { class: 'comment' }, span('date', fmtDate(c.at)), ' ', span('cyan', c.user), h('b', {}, `(${c.text})`)),
-      ),
+      ...comments
+        .filter((c) => c.user !== '@hall')
+        .map((c) => h('div', { class: 'comment' }, span('date', fmtDate(c.at)), ' ', span('cyan', c.user), h('b', {}, `(${c.text})`))),
     );
   };
   cForm.addEventListener('submit', (e) => {
@@ -119,207 +173,218 @@ async function titleView() {
     })();
   });
 
-  page(
-    h(
-      'div',
-      { class: 'stage' },
-      bubbles(),
-      h('h1', { class: 'logo' }, 'SLIME BREEDER'),
-      form,
-      err,
-      h(
-        'small',
-        {},
-        'If this is your first time, you will register to play with the information you enter above. Passwords are stored hashed, but still don’t reuse an important one.',
-      ),
-    ),
-    h('hr'),
-    cForm,
-    cErr,
-    h('hr'),
-    list,
+  const stage = h(
+    'div',
+    { class: 'stage' },
+    logo(),
+    form,
+    err,
+    banner ? h('div', { class: 'banner' }, banner) : '',
+    h('small', {}, t('login.note')),
   );
-  await loadComments().catch(() => undefined);
+  const out = h('div', {}, await ticker(), stage, h('hr'), cForm, cErr, h('hr'), list);
+  void loadComments().catch(() => undefined);
+  return out;
 }
 
-// ---------- mate / fight ----------
-
-function mateView(s: Session) {
-  const sel = h('select', {}, h('option', { value: '' }, 'Mate'), ...s.mates.map((m) => h('option', { value: m.id }, `Rank ${m.rank} / ${m.name} ${m.gen}`)));
-  const btn = h('button', { type: 'submit' }, 'Mate!');
+function mateTop(s: Session): HTMLElement {
+  const sel = h('select', {}, h('option', { value: '' }, t('mate.option')));
+  for (const m of s.mates) {
+    sel.append(h('option', { value: m.id }, m.from === 'hall' ? `${t('mate.hall')} ${m.name} ${m.gen}` : `${t('card.rank', { n: m.rank })} ${m.name} ${m.gen}`));
+  }
+  sel.append(h('option', { value: 'no' }, t('mate.unknown')));
+  const btn = h('button', { type: 'submit' }, t('mate.go'));
   const err = errorBox();
   const form = h(
     'form',
     { class: 'rel' },
-    h('div', { class: 'msg' }, `Welcome, ${s.mother.owner}${s.registered ? ' (new account created)' : ''}. Please select the mate for `, h('b', { class: 'pink' }, s.mother.name), '.'),
-    h('span', { class: 'pink' }, s.mother.name),
+    h('div', { class: 'msg' }, t('mate.welcome', { user: s.mother.owner, name: s.mother.name }), s.registered ? ` ${t('mate.newAccount')}` : ''),
+    h('b', { class: 'pink' }, s.mother.name),
     h('span', { class: 'sub' }, String(s.mother.gen)),
-    ' x ',
+    ' × ',
     sel,
     ' ',
     btn,
     err,
-    slimeCard(s.mother),
   );
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     void guarded(btn, err, async () => {
-      if (!sel.value) throw new Error('Pick a mate first.');
-      const r = await api.mate(s.token, Number(sel.value));
+      if (!sel.value) throw new Error(t('mate.pick'));
+      const r = await api.mate(s.token, sel.value === 'no' ? 'no' : Number(sel.value));
       await hatch(form);
       s.pending = r.child;
       s.phase = 'fight';
-      render();
+      renderTop();
     })();
   });
-  page(form);
+
+  // lineage compatibility list: pick a lineage to list its slimes in the lower frame
+  const nixSel = h('select', {}, h('option', { value: '' }, t('mate.nixList')));
+  const show = h('button', { type: 'button' }, t('mate.show'));
+  show.addEventListener('click', () => {
+    if (nixSel.value) location.hash = `#/lineage/${nixSel.value}`;
+  });
+  void api
+    .nix(s.token)
+    .then((tbl: NixTable) => {
+      let divided = false;
+      for (const r of tbl.rows) {
+        if (r.count === 0 && !divided) {
+          nixSel.append(h('option', { value: '' }, '－－－－－－'));
+          divided = true;
+        }
+        nixSel.append(h('option', { value: r.no }, `${r.print} ${r.name} ${r.no} (${STAT_KEYS[r.type]!.toUpperCase()})`));
+      }
+    })
+    .catch(() => undefined);
+
+  return h('div', {}, form, slimeCard(s.mother), h('div', { class: 'nixbar' }, nixSel, ' ', show, h('br'), h('small', {}, t('mate.nixHelp'))));
 }
 
-function fightView(s: Session) {
+function fightTop(s: Session): HTMLElement {
   const child = s.pending!;
-  const name = h('input', { type: 'text', size: 18, maxlength: 36, value: child.name });
-  const btn = h('button', { type: 'submit' }, 'Round 1...Fight!');
+  const name = h('input', { type: 'text', size: 18, maxlength: 36, value: t('default.name') });
+  const btn = h('button', { type: 'submit' }, t('born.fight'));
   const err = errorBox();
-  const results = h('div');
   const form = h(
     'form',
     {},
-    h('div', { class: 'msg' }, `The child of ${s.mother.name} has been born! Give it a name, and challenge the ranked slimes!`),
-    'Name: ',
+    h('div', { class: 'msg' }, t('born.msg', { name: s.mother.name })),
+    t('born.name'),
+    ' ',
     name,
     ' ',
     btn,
     err,
-    slimeCard(child),
-    h('div', {}, `This slime is number ${child.id} to be born into this realm.`),
+    slimeCard(child, { showNix: true }),
+    h('div', { class: 'small' }, t('born.no', { n: child.id })),
   );
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     void guarded(btn, err, async () => {
-      const r = await api.fight(s.token, name.value);
-      // show the newborn as it was before the fights; swap in the final record afterwards
-      const born = h('div', { class: 'pop' }, slimeCard(child));
-      form.replaceWith(born);
-      let skipAll = false;
-      const skipBtn = h('button', { type: 'button' }, 'Skip all animations ▸▸');
-      skipBtn.addEventListener('click', () => {
-        skipAll = true;
-        current?.skip();
-      });
-      results.append(skipBtn);
-      let current: ReturnType<typeof arena> | null = null;
-      for (const [i, st] of r.steps.entries()) {
-        const round = h('div', { class: 'round' }, h('div', { class: 'round-label' }, st.title ? 'Title match!' : `Round ${i + 1}`), slimeCard(st.opponent, { versus: true }));
-        results.append(round);
-        current = arena(r.slime, st.opponent, st.report, st.title);
-        if (skipAll) current.skip();
-        round.append(current.el);
-        await current.play();
-        round.append(roundDetails(st, r.finalPoints));
-      }
-      if (r.defense) {
-        const d = r.defense;
-        const panel = h(
-          'div',
-          { class: 'round' },
-          h('div', { class: 'round-label' }, `Title defense match: ${d.challenger.name} vs champion ${d.champion.name}`),
-        );
-        results.append(panel);
-        current = arena(d.challenger, d.champion, d.report, true);
-        if (skipAll) current.skip();
-        panel.append(current.el);
-        await current.play();
-        panel.append(
-          battleReport(d.report),
-          h('div', { class: 'result stamp' }, d.championHeld ? `${d.champion.name} defended the title!` : `${d.challenger.name} is the new champion!`),
-        );
-      }
-      skipBtn.remove();
-      born.replaceChildren(slimeCard(r.slime));
-      session = null; // a fresh login is needed for the next generation (15 min cooldown)
+      const token = s.token;
+      const r = await api.fight(token, name.value);
+      // the form stays up as the "born" card; results play in the bottom frame
+      top.replaceChildren(nav(), h('div', {}, h('div', { class: 'pop' }, slimeCard(child))));
+      session = null;
+      banner = t('result.again', { n: 15 });
+      await playResults(r);
     })();
   });
-  page(form, results);
+  return form;
 }
 
-// ---------- ranking / hall / guide ----------
+// ---------------------------------------------------------------------------
+// bottom frame: fight playback and routed views
+// ---------------------------------------------------------------------------
 
-async function rankView(focusId?: number) {
-  page(h('div', {}, 'Loading…'));
-  const { slimes } = await api.rank();
-  const wrap = h('div', {}, h('div', { class: 'head' }, span('yellow', 'Ranking')));
-  slimes.forEach((s, i) => {
-    const card = h('div', { class: 'fade-up' }, slimeCard(s, { id: `s${s.id}` }), h('hr'));
-    card.style.setProperty('--i', `${Math.min(i, 12) * 0.05}s`);
-    wrap.append(card);
+async function playResults(r: Awaited<ReturnType<typeof api.fight>>) {
+  const results = h('div', { class: 'results' });
+  bottomOverride = results;
+  bottom.replaceChildren(results);
+  let skipAll = false;
+  let current: ReturnType<typeof arena> | null = null;
+  const skipBtn = h('button', { type: 'button' }, t('battle.skipAll'));
+  skipBtn.addEventListener('click', () => {
+    skipAll = true;
+    current?.skip();
   });
-  page(wrap);
-  if (focusId) document.getElementById(`s${focusId}`)?.scrollIntoView();
-}
+  results.append(skipBtn);
 
-async function hallView() {
-  const { entries } = await api.hall();
-  const wrap = h('div', {}, h('h2', { style: 'color:#7f7fff' }, 'Hall of Fame'));
-  if (!entries.length) wrap.append('No legend has fallen yet.');
-  for (const e of entries) {
-    wrap.append(h('div', {}, `${fmtDate(e.at)} — defended the title ${e.defenses} times`), slimeCard(e.slime), h('hr'));
+  for (const [i, st] of r.steps.entries()) {
+    const round = h('div', { class: 'round' }, h('div', { class: 'round-label rainbow' }, st.title ? t('battle.title') : t('battle.round', { n: i + 1 })), slimeCard(st.opponent, { versus: true }));
+    results.append(round);
+    current = arena(r.slime, st.opponent, st.report, st.title);
+    if (skipAll) current.skip();
+    round.append(current.el);
+    await current.play();
+    round.append(roundDetails(st, r.finalPoints));
+    round.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
-  page(wrap);
-}
-
-function guideView() {
-  const d = (t: string) => h('p', {}, t);
-  page(
-    h(
-      'div',
-      { class: 'guide' },
-      h('h2', {}, 'Instructions'),
-      h('h3', {}, 'About this game'),
-      d('Slime Breeder is a genetic evolution simulator. Every slime carries DNA; its stats and looks are all decided by that DNA. Your only job is to choose a mate for your slime and hope the child turns out stronger.'),
-      h('h3', {}, 'How to play'),
-      d('Log in, pick a mate from the ranking (slimes with no seeds left cannot be chosen), name the newborn, and send it into battle. It starts from the bottom of the ladder and keeps fighting upward until it loses. You can play once per 15 minutes; accounts idle for over a week are deleted.'),
-      h('h3', {}, 'Parameters'),
-      h(
-        'table',
-        {},
-        ...[
-          ['HP', 'Hit points. At zero the slime loses.'],
-          ['STM', 'Stamina. It drains with every attack and blow; below 50% the slime weakens quickly, and at zero it has about half its strength. High-status slimes burn it faster.'],
-          ['STR', 'Strength: damage per hit.'],
-          ['DEX', 'Dexterity: how easily attacks land.'],
-          ['AGL', 'Agility: how well attacks are evaded.'],
-          ['SPD', 'Speed: the faster slime attacks more often.'],
-        ].map(([a, b]) => h('tr', {}, h('td', {}, a!), h('td', {}, b!))),
-      ),
-      d('Heavy slimes have more HP and STR; light slimes have higher DEX, AGL and SPD. When the species grows strong the numbers are shown divided by 10, 100… so they stay readable (the real values are unchanged).'),
-      h('h3', {}, 'Pedigree'),
-      d('Left to right: parents, grandparents, then great-grandparents on your side and on the mate’s side. Names in cyan have already left the ranking; names in blue are links to ranked slimes.'),
-      h('h3', {}, 'Battle report'),
-      d('LUCK is the average of the random numbers rolled: the first is the hit roll (target 50), the one in parentheses the damage roll (about 80). In the log, big O/X are your hits/misses and small o/x the opponent’s; C/c marks a critical hit (a near-perfect roll, roughly 1% of hits, about double damage).'),
-      h('h3', {}, 'Ranking'),
-      d('Rankings are point-based. A new slime starts with 1 point and fights upward from the bottom of the ladder, meeting only slimes that hold more points than itself (the top three are always fought), until it loses. Beating a slime takes over all of its points; losing never costs points, but the slime that stops your winning streak receives every point you had collected. If you beat the champion you take the title, and a champion who defended it more than 3 times enters the Hall of Fame when dethroned. Only the top 50 stay ranked, and if totals grow too large the whole ladder is divided by 10.'),
-      h('h3', {}, 'DNA & evolution'),
-      d('Every slime has two strands of 19 genes. Ten of them shape its body; of each pair the stronger-willed one speaks, and when neither dominates the two blend, so hidden genes can resurface generations later. The rest are switches for colour and for hidden mutants: only when the right switches line up does a rare variant appear — aura, hider, wings, ribbon, crown, angel, devil, insect, ahoge, zombie… They are cosmetic, but they show who you are descended from.'),
-      d('Strong or weak is decided by chance at birth with equal odds, but strong slimes are chosen as mates more often and weak ones leave fewer children, so the species evolves.'),
-      h('h3', {}, 'Story'),
-      d('God was bored and made slimes from clay. Adam made seeds; Eve ate them and turned grey. When food ran out, the battles began.'),
-    ),
+  if (r.defense) {
+    const d = r.defense;
+    const panel = h('div', { class: 'round' }, h('div', { class: 'round-label rainbow' }, t('result.defense', { a: d.challenger.name, b: d.champion.name })));
+    results.append(panel);
+    current = arena(d.challenger, d.champion, d.report, true);
+    if (skipAll) current.skip();
+    panel.append(current.el);
+    await current.play();
+    panel.append(battleReport(d.report), h('div', { class: 'result stamp' }, d.championHeld ? t('result.held', { name: d.champion.name }) : t('result.newChamp', { name: d.challenger.name })));
+  }
+  skipBtn.remove();
+  const end = h(
+    'div',
+    { class: 'result' },
+    h('div', { class: 'shine-gold big2' }, r.finalRank ? t('result.rank', { name: r.slime.name, n: r.finalRank }) : t('result.noRank', { name: r.slime.name })),
+    h('a', { href: '#/rank' }, t('result.viewRank')),
   );
+  results.append(end);
+  sparkleAt(end);
+  renderTop(); // back to the title with a "come back later" banner
 }
 
-// ---------- router ----------
-
-function render() {
+async function routedBottom(): Promise<HTMLElement> {
   const hash = location.hash.replace(/^#\/?/, '');
   const [route, arg] = hash.split('/');
-  if (route === 'guide') return guideView();
-  if (route === 'rank') return void rankView(arg ? Number(arg) : undefined);
-  if (route === 'hall') return void hallView();
-  if (session) return session.phase === 'fight' && session.pending ? fightView(session) : mateView(session);
-  void titleView();
+  switch (route) {
+    case 'guide':
+      return guideView();
+    case 'lineages':
+      return lineagesView();
+    case 'lineage':
+      return lineageView(await api.lineage(Number(arg), session?.token), session?.token ?? null);
+    case 'hall':
+      return hallView();
+    case 'titles':
+      return titlesView();
+    default: {
+      const focus = arg && /^\d+$/.test(arg) ? Number(arg) : undefined;
+      return rankView(focus || arg === 'all' ? 'all' : arg === 'p2' ? 'b' : 'a', focus);
+    }
+  }
 }
 
-window.addEventListener('hashchange', render);
-render();
+let bottomSeq = 0;
+async function renderBottom() {
+  if (bottomOverride) {
+    bottom.replaceChildren(bottomOverride);
+    return;
+  }
+  const seq = ++bottomSeq;
+  bottom.replaceChildren(h('div', { class: 'loading' }, t('loading')));
+  try {
+    const el = await routedBottom();
+    if (seq !== bottomSeq) return;
+    bottom.replaceChildren(el, h('hr'), COPYRIGHT());
+    bottom.scrollTop = 0;
+    if (/^#\/rank\/\d+/.test(location.hash)) {
+      const id = location.hash.split('/')[2];
+      document.getElementById(`s${id}`)?.scrollIntoView({ block: 'start' });
+    }
+  } catch (e) {
+    if (seq !== bottomSeq) return;
+    const box = errorBox();
+    showError(box, e);
+    bottom.replaceChildren(box);
+  }
+}
 
-export type { SlimeView };
+async function renderTop() {
+  const body = session ? (session.phase === 'fight' && session.pending ? fightTop(session) : mateTop(session)) : await titleTop();
+  top.replaceChildren(nav(), body);
+}
+
+function renderAll() {
+  void renderTop();
+  void renderBottom();
+}
+
+window.addEventListener('hashchange', () => {
+  bottomOverride = null;
+  void renderBottom();
+});
+
+document.documentElement.lang = getLang();
+startAmbient();
+renderAll();
