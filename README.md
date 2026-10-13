@@ -1,12 +1,9 @@
 # Slime Breeder Reborn
 
-A modern web restoration of **Slime Breeder** (1999, tatuta; English version by rika), the genetic
-evolution ladder game once hosted at `cgi.heyuri.net/slime/`.
-
-> Fan reimplementation. The original CGI source is not public, so the DNA, stat and battle
-> formulas are **re-derived from the in-game guide and observed screens**, not copied.
-> Tuning will differ from the original. The slime sprite is redrawn as SVG. Check the
-> original author's terms before any public deployment.
+A modern web restoration of **Slime Breeder** (1999, tatuta; English edition by rika), the genetic
+evolution ladder game once hosted at `cgi.heyuri.net/slime/`. Rules, genetics and the battle engine are
+ported from the author's own **SLIME BREEDER plus v1.08** source. **See [NOTICE.md](NOTICE.md)** for credits and
+the licence terms (modified redistribution allowed with credit, **non-commercial**).
 
 ## Run
 
@@ -14,46 +11,45 @@ evolution ladder game once hosted at `cgi.heyuri.net/slime/`.
 npm install
 npm run build          # client -> dist/
 npm start              # http://localhost:3000 (SQLite file: ./slime.db)
+npm test
 ```
 
-Dev: `npm run dev:server` + `npm run dev:client` (Vite proxies `/api`).
+Dev: `npm run dev:server` + `npm run dev:client` (Vite proxies `/api`). All mutant sprites: `/gallery.html`.
 Env: `PORT`, `SLIME_DB` (db path), `SLIME_COOLDOWN_MIN` (default 15, `0` to disable).
-Requires Node >= 22.13 (uses built-in `node:sqlite`).
+Requires Node >= 22.13 (built-in `node:sqlite`). A database from an older schema is refused, not misread.
 
-## Game rules implemented
+## What is ported from the original source
 
-- Log in with name + password (first login registers; passwords hashed with scrypt).
-- Pick a mate from the top-50 ranking (not slimes with 0 seeds) -> child with mixed DNA -> name it -> fight.
-- DNA: 9 traits x 2 strands (dominant strand expressed, other hidden); mutations equally likely up or down.
-- Battle: about 1% of landed hits are critical (~2.2x). SPD fills an energy bar, DEX vs SPD decides hits, STR is damage; stamina costs 4/1/6
-  (attack/evade/hit), weaker below 50%, half strength at 0.
-- Ladder: start at 1 pt, fight upward through slimes with more points (top 3 always), lose = stop.
-  Winning takes over the defender's points; the slime that stops your run receives all points you collected
-  (rule from the author's guide). Ladder totals are divided by 10 when they get huge. Beat the champion to take the title; champions with >3 defenses enter the Hall of Fame.
-- 15-minute play cooldown; accounts idle for 7 days are purged; one-liner comments.
+- **Genetics:** two strands of 19 genes. Ten quantitative genes `{value, assertiveness}` (the more assertive
+  strand is expressed, close ones blend, so recessive genes resurface later) and nine 0/1 switches for
+  colour (R/G/B), shade/mutant gate (X/Y/Z) and ribbon/crown/wing (U/V/W). Offspring genes drift by
+  `8` dice whose size follows the world's average weight; a heavy mate widens, a light mate narrows them.
+- **Status formulas:** weight, HP, STM, STR, DEX, AGL, SPD, stamina cost and fertility from the ten genes.
+  Displayed numbers are divided by 10^n as the species grows (`dispCut`), as in the original.
+- **Mutants:** only when X, Y and Z are 1 on all six strands do the U/V/W and colour switches select
+  aura, hider, wing, ribbon(+wing), crown(+wing), aho, zombie, oyaji, musi, angel or devil. They are cosmetic.
+  Spontaneous flips of a switch group happen at 1 in 200 per group per birth.
+- **Battle:** speed fills a gage, DEX vs AGL rolls decide hits, stamina drains per action and weakens
+  power/accuracy, heavy blows slow the victim; a near-perfect roll is a critical hit (~1%). Log letters `O X C o x c`.
+- **Ladder:** a newborn (1 pt) fights up from the bottom against slimes with at least its points (top 3 always)
+  until its first defeat. Beating a slime takes over its points; the slime that ends the run collects all of the
+  challenger's points. Totals are divided when the lowest rank reaches three digits. If a non-champion
+  out-scores the champion a title defense match is played; a champion dethroned after 4+ defenses enters the
+  Hall of Fame. Seeds regrow from each slime's fertility (SEX) every time anyone mates.
+- Accounts: name + password (scrypt-hashed), one slime per account, 15-minute play cooldown, 7 days idle = deleted.
 
-## Genetics (beyond stats)
+## What is new in this version
 
-- Colour: three colour genes (R/G/B) in 5 steps, like the original's palettes (founders are grey).
-- Size: the sprite grows with weight using the original's measured relation (50 -> ~67px, 250 -> ~116px).
-- Mutation parts, modelled on the variants seen in the author's own *plus* edition (sprites `wings`,
-  `crown`, `ribbon`, `halo`/angel, `devil`, `musi`/insect, `aura`, `aho`/ahoge, `zombie`, `dark`/hider) plus
-  an extra `metal`. Parts combine (angel = wings + halo, crowned wings, ribbon + wings). Each is a rare gene
-  (~0.4% per strand) that travels through families, can hide for a generation, and only *shows* when the rest
-  of the DNA suits it. **Which conditions and stat effects each part has is my own design** (the originals
-  are not public). See `/gallery.html` for all parts.
-
-## Battle calibration
-
-Constants were tuned against the 50 ranked slimes on the original ranking page and its guide sample:
-attacks per side 22-45, hit rate ~45%, stamina left 5-30%, avg damage 5-9 x STR (`npm test` checks these).
-Stat formulas follow the original's weight relations (HP and STR track weight; DEX and SPD fall with it).
+TypeScript + Hono + SQLite server, Vite client, animated hatch / battle replay / effects, newly drawn SVG
+slimes, tests (including checks against numbers from the original's ranking page and guide).
 
 ## Known gaps vs. the original
 
-- The original's own hidden mutations are unknown; the three above are new.
-- Point values per win and the exact DNA->stat formulas are approximations (battle numbers are calibrated, not copied).
+- The **bloodline ("keito") and nicks system** of the plus edition is not implemented (the English edition has none).
+- The English edition showed five stats; the plus engine has a sixth, **AGL** (evasion), which is used here.
+- Which long-run balance the world settles into (the English ranking sat at weight ~250) is not verified.
+- Numbers of the English edition could only be checked by shape (attack counts, luck averages), not exactly.
 
 ## Layout
 
-`src/shared` (DNA, stats, battle, ladder rules) · `src/server` (Hono API + SQLite) · `src/client` (Vite, vanilla TS)
+`src/shared` (genes, stats, battle, ladder rules) · `src/server` (Hono API + SQLite) · `src/client` (Vite, vanilla TS)

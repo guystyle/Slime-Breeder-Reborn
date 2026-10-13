@@ -1,7 +1,15 @@
 import { DatabaseSync } from 'node:sqlite';
 
+/** Bump when the stored slime format changes; older databases are refused rather than misread. */
+export const SCHEMA_VERSION = 2;
+
 export function openDb(path: string): DatabaseSync {
   const db = new DatabaseSync(path);
+  const have = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+  const hasSlimes = db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'slimes'").get();
+  if (hasSlimes && have !== SCHEMA_VERSION) {
+    throw new Error(`Database ${path} was made by an older version (schema ${have}, need ${SCHEMA_VERSION}). Move it away to start a new world.`);
+  }
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
@@ -26,6 +34,10 @@ export function openDb(path: string): DatabaseSync {
       name TEXT NOT NULL,
       gen INTEGER NOT NULL,
       dna TEXT NOT NULL,
+      stats TEXT NOT NULL,
+      color TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      sperm INTEGER NOT NULL DEFAULT 0,
       born INTEGER NOT NULL,
       seeds INTEGER NOT NULL,
       children INTEGER NOT NULL DEFAULT 0,
@@ -53,5 +65,6 @@ export function openDb(path: string): DatabaseSync {
       snapshot TEXT NOT NULL
     );
   `);
+  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return db;
 }

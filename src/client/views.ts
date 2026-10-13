@@ -1,6 +1,5 @@
 import type { BattleReport, SideReport } from '../shared/battle.ts';
-import type { MutationName } from '../shared/dna.ts';
-import { spriteSize } from '../shared/stats.ts';
+import type { Kind } from '../shared/dna.ts';
 import type { FightStep, Pedigree, SlimeView } from '../shared/types.ts';
 import { h, span } from './dom.ts';
 import { sprite } from './sprite.ts';
@@ -13,18 +12,21 @@ export const fmtDate = (iso: string) => {
 
 export { sprite } from './sprite.ts';
 
-const FORM_LABEL: Record<MutationName, string> = {
-  wings: '🪽 Winged',
-  crown: '👑 Crowned',
-  ribbon: '🎀 Ribbon',
-  halo: '😇 Halo',
-  devil: '😈 Devil',
-  musi: '🐛 Insect',
+const KIND_LABEL: Record<Kind, string> = {
+  normal: '',
   aura: '🔥 Aura',
-  aho: '🤪 Ahoge',
+  hider: '🌑 Hider',
+  wing: '🪽 Winged',
+  ribbon: '🎀 Ribbon',
+  ribbonw: '🎀 Ribbon wings',
+  crown: '👑 Crown',
+  crownw: '👑 Crowned wings',
+  aho: '🤪 Aho',
   zombie: '🧟 Zombie',
-  dark: '🌑 Dark',
-  metal: '⚙ Metal',
+  oyaji: '🐼 Oyaji',
+  musi: '🐛 Musi',
+  angel: '😇 Angel',
+  devil: '😈 Devil',
 };
 
 export function slimeHeader(s: SlimeView, opts: { versus?: boolean } = {}): HTMLElement {
@@ -39,7 +41,7 @@ export function slimeHeader(s: SlimeView, opts: { versus?: boolean } = {}): HTML
     h('b', { class: 'pink' }, s.name),
     h('span', { class: 'sub' }, String(s.gen)),
     s.defenses > 0 ? span('yellow sub', ` ${s.defenses}`) : '',
-    ...(s.forms ?? []).map((f) => span(`badge ${f}`, FORM_LABEL[f])),
+    s.kind !== 'normal' ? span(`badge ${s.kind}`, KIND_LABEL[s.kind]) : '',
     ` / `,
     s.seeds > 0 ? span('yellow', String(s.seeds)) : '0',
     ` seeds left / ${s.children} children / ${s.wins} - ${s.losses}`,
@@ -84,21 +86,22 @@ export function pedigree(s: SlimeView): HTMLElement {
 
 export function slimeCard(s: SlimeView, opts: { versus?: boolean; id?: string } = {}): HTMLElement {
   const st = s.stats;
+  const sh = s.shown;
   const root = h('div', opts.id ? { id: opts.id } : {});
   root.append(slimeHeader(s, opts));
   root.append(
     h(
       'div',
       { class: 'slime' },
-      h('div', { class: 'box' }, sprite(s.color, spriteSize(st.weight), s.forms ?? []), `weight:${st.weight}`),
+      h('div', { class: 'box' }, sprite(s.color, s.px, s.kind), `weight:${st.weight}`),
       h(
         'div',
         { class: 'info' },
         h(
           'table',
           { class: 'stats' },
-          h('tr', {}, h('th', {}, `generation ${s.gen} : born ${fmtDate(s.born)}`), ...['HP', 'STM', 'STR', 'DEX', 'SPD'].map((t) => h('th', {}, t))),
-          h('tr', {}, h('th', {}, `Owner: ${s.owner}`), ...[st.hp, st.stm, st.str, st.dex, st.spd].map((n) => h('th', {}, String(n)))),
+          h('tr', {}, h('th', {}, `generation ${s.gen} : born ${fmtDate(s.born)}`), ...['HP', 'STM', 'STR', 'DEX', 'AGL', 'SPD'].map((t) => h('th', {}, t))),
+          h('tr', {}, h('th', {}, `Owner: ${s.owner}`), ...[sh.hp, sh.stm, sh.str, sh.dex, sh.agl, sh.spd].map((n) => h('th', {}, String(n)))),
         ),
         pedigree(s),
       ),
@@ -108,7 +111,7 @@ export function slimeCard(s: SlimeView, opts: { versus?: boolean; id?: string } 
 }
 
 function sideRow(r: SideReport, me: boolean, won: boolean): HTMLElement {
-  const luck = `LUCK: ${r.luckHit}(${r.luckDmg ?? ''})`;
+  const luck = `LUCK: ${r.luckAtk}(${r.luckHit})`;
   return h(
     'tr',
     me ? { class: 'me' } : {},

@@ -3,18 +3,20 @@ import { api } from './api.ts';
 import { h, span } from './dom.ts';
 import { arena } from './arena.ts';
 import { hatch } from './fx.ts';
-import { fmtDate, roundDetails, slimeCard } from './views.ts';
+import { battleReport, fmtDate, roundDetails, slimeCard } from './views.ts';
 
 type Session = Extract<EnterResponse, { ok: true }>;
 
 const app = document.getElementById('app')!;
 let session: Session | null = null;
 
+/** The author's copyright and link must stay (see NOTICE.md); this is a modified version, credited below. */
 const COPYRIGHT = h(
   'footer',
   {},
-  h('b', {}, 'SLIME BREEDER'),
-  ' Reborn — a fan restoration of the 1999 game by tatuta.',
+  h('i', {}, h('b', {}, 'SLIME BREEDER'), ' (plus v1.08 rules) Copyright ©1999-2002 ', h('a', { href: 'http://www2j.biglobe.ne.jp/~tatuta/_MENU.htm', target: '_blank', rel: 'noopener' }, 'tatuta'), '.'),
+  h('br'),
+  h('i', {}, 'Modified version “Reborn” by ', h('a', { href: 'https://github.com/guystyle/Slime-Breeder-Reborn', target: '_blank', rel: 'noopener' }, 'guystyle'), ' — see NOTICE.md.'),
 );
 
 function nav(): HTMLElement {
@@ -215,6 +217,23 @@ function fightView(s: Session) {
         await current.play();
         round.append(roundDetails(st, r.finalPoints));
       }
+      if (r.defense) {
+        const d = r.defense;
+        const panel = h(
+          'div',
+          { class: 'round' },
+          h('div', { class: 'round-label' }, `Title defense match: ${d.challenger.name} vs champion ${d.champion.name}`),
+        );
+        results.append(panel);
+        current = arena(d.challenger, d.champion, d.report, true);
+        if (skipAll) current.skip();
+        panel.append(current.el);
+        await current.play();
+        panel.append(
+          battleReport(d.report),
+          h('div', { class: 'result stamp' }, d.championHeld ? `${d.champion.name} defended the title!` : `${d.challenger.name} is the new champion!`),
+        );
+      }
       skipBtn.remove();
       born.replaceChildren(slimeCard(r.slime));
       session = null; // a fresh login is needed for the next generation (15 min cooldown)
@@ -265,21 +284,23 @@ function guideView() {
         {},
         ...[
           ['HP', 'Hit points. At zero the slime loses.'],
-          ['STM', 'Stamina. Attacking costs 4, evading 1, being hit 6. Below 50% the slime weakens, down to half strength at zero; the drain slows when it is nearly empty. High-status slimes burn it faster.'],
+          ['STM', 'Stamina. It drains with every attack and blow; below 50% the slime weakens quickly, and at zero it has about half its strength. High-status slimes burn it faster.'],
           ['STR', 'Strength: damage per hit.'],
-          ['DEX', 'Dexterity: chance an attack lands.'],
-          ['SPD', 'Speed: number of attacks and ability to evade.'],
+          ['DEX', 'Dexterity: how easily attacks land.'],
+          ['AGL', 'Agility: how well attacks are evaded.'],
+          ['SPD', 'Speed: the faster slime attacks more often.'],
         ].map(([a, b]) => h('tr', {}, h('td', {}, a!), h('td', {}, b!))),
       ),
-      d('Heavy slimes hit harder but are less accurate and slower; light slimes are quicker.'),
+      d('Heavy slimes have more HP and STR; light slimes have higher DEX, AGL and SPD. When the species grows strong the numbers are shown divided by 10, 100… so they stay readable (the real values are unchanged).'),
       h('h3', {}, 'Pedigree'),
       d('Left to right: parents, grandparents, then great-grandparents on your side and on the mate’s side. Names in cyan have already left the ranking; names in blue are links to ranked slimes.'),
       h('h3', {}, 'Battle report'),
-      d('LUCK is the average of the random rolls: the first number is the hit roll (target 50), the one in parentheses is the damage roll (target 67). In the log, big O/X are your hits/misses and small o/x are the opponent’s; C/c is a critical hit (about 1% of hits, roughly double damage).'),
+      d('LUCK is the average of the random numbers rolled: the first is the hit roll (target 50), the one in parentheses the damage roll (about 80). In the log, big O/X are your hits/misses and small o/x the opponent’s; C/c marks a critical hit (a near-perfect roll, roughly 1% of hits, about double damage).'),
       h('h3', {}, 'Ranking'),
       d('Rankings are point-based. A new slime starts with 1 point and fights upward from the bottom of the ladder, meeting only slimes that hold more points than itself (the top three are always fought), until it loses. Beating a slime takes over all of its points; losing never costs points, but the slime that stops your winning streak receives every point you had collected. If you beat the champion you take the title, and a champion who defended it more than 3 times enters the Hall of Fame when dethroned. Only the top 50 stay ranked, and if totals grow too large the whole ladder is divided by 10.'),
       h('h3', {}, 'DNA & evolution'),
-      d('Rarely a mutation appears — wings, crown, ribbon, halo, devil, insect, aura, ahoge, zombie, dark or metal — but only when the rest of the DNA suits it, and parts can combine (wings + halo makes an angel). Each trait has two strands; the dominant one shows and the other stays hidden until a later generation. A child gets one strand from each parent, with small mutations that are equally likely to help or hurt. Because weak slimes are picked as mates less often, the species still evolves.'),
+      d('Every slime has two strands of 19 genes. Ten of them shape its body; of each pair the stronger-willed one speaks, and when neither dominates the two blend, so hidden genes can resurface generations later. The rest are switches for colour and for hidden mutants: only when the right switches line up does a rare variant appear — aura, hider, wings, ribbon, crown, angel, devil, insect, ahoge, zombie… They are cosmetic, but they show who you are descended from.'),
+      d('Strong or weak is decided by chance at birth with equal odds, but strong slimes are chosen as mates more often and weak ones leave fewer children, so the species evolves.'),
       h('h3', {}, 'Story'),
       d('God was bored and made slimes from clay. Adam made seeds; Eve ate them and turned grey. When food ran out, the battles began.'),
     ),

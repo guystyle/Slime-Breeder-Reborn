@@ -1,7 +1,25 @@
-import type { MutationName } from '../shared/dna.ts';
+import type { Kind } from '../shared/dna.ts';
 import { spriteSize } from '../shared/stats.ts';
 
-export type Form = MutationName;
+/** Drawable parts; each mutant type of the original is a combination of them. */
+type Part = 'wings' | 'crown' | 'ribbon' | 'halo' | 'devil' | 'musi' | 'aura' | 'aho' | 'zombie' | 'dark' | 'oyaji';
+
+export const KIND_PARTS: Record<Kind, Part[]> = {
+  normal: [],
+  aura: ['aura'],
+  hider: ['dark'],
+  wing: ['wings'],
+  ribbon: ['ribbon'],
+  ribbonw: ['ribbon', 'wings'],
+  crown: ['crown'],
+  crownw: ['crown', 'wings'],
+  aho: ['aho'],
+  zombie: ['zombie'],
+  oyaji: ['oyaji'],
+  musi: ['musi'],
+  angel: ['wings', 'halo'],
+  devil: ['devil'],
+};
 
 const NS = 'http://www.w3.org/2000/svg';
 let uid = 0;
@@ -60,14 +78,14 @@ function flames(svg: SVGElement, color: string) {
 }
 
 /**
- * A slime drawn as SVG. The body takes the genetic colour; mutation parts
- * (wings, crown, ribbon, halo, devil, insect, aura, ahoge, zombie, dark,
- * metal) are layered on top and combine freely (angel = wings + halo, ...).
+ * A slime drawn as SVG (own artwork, modelled on the original's mutant types).
+ * The body takes the genetic colour; `kind` selects the mutant parts.
  * `idle` adds a breathing/hovering loop.
  */
-export function sprite(color: string, size: number, forms: Form[] = [], opts: { idle?: boolean; flip?: boolean } = {}): SVGSVGElement {
+export function sprite(color: string, size: number, kind: Kind = 'normal', opts: { idle?: boolean; flip?: boolean } = {}): SVGSVGElement {
   const id = `g${++uid}`;
-  const has = (f: Form) => forms.includes(f);
+  const parts = KIND_PARTS[kind] ?? [];
+  const has = (f: Part) => parts.includes(f);
   const flying = has('wings') || has('devil') || has('musi');
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 120 120');
@@ -77,15 +95,8 @@ export function sprite(color: string, size: number, forms: Form[] = [], opts: { 
   svg.style.setProperty('--d', `${-(uid % 7) * 0.4}s`);
   if (opts.flip) svg.style.transform = 'scaleX(-1)';
 
-  const metal = has('metal');
   const dark = has('dark');
   const defs = el(svg, 'defs');
-  if (metal) {
-    const lg = el(defs, 'linearGradient', { id: `${id}m`, x1: '0', y1: '0', x2: '1', y2: '1' });
-    el(lg, 'stop', { offset: '0', 'stop-color': shade(color, 0.75) });
-    el(lg, 'stop', { offset: '0.45', 'stop-color': shade(color, 0.15) });
-    el(lg, 'stop', { offset: '1', 'stop-color': shade(color, -0.55) });
-  }
   el(el(defs, 'clipPath', { id: `${id}c` }), 'path', { d: BODY });
 
   // behind the body
@@ -95,18 +106,26 @@ export function sprite(color: string, size: number, forms: Form[] = [], opts: { 
   if (has('musi')) wings(svg, 'insect');
 
   // body
-  const fill = dark ? '#16161d' : metal ? `url(#${id}m)` : color;
-  el(svg, 'path', { d: BODY, fill, stroke: dark ? color : metal ? '#d6e6ff' : '#fff', 'stroke-width': dark ? '2' : '3' });
-  if (metal) {
-    const sweep = el(svg, 'g', { 'clip-path': `url(#${id}c)` });
-    el(sweep, 'rect', { class: 'shine', x: '-40', y: '0', width: '22', height: '130', fill: '#fff', opacity: '0.55', transform: 'rotate(20 60 60)' });
-  }
-  if (!dark) el(svg, 'path', { d: 'M30 50 C36 36 48 28 58 26', fill: 'none', stroke: '#fff', 'stroke-width': '5', 'stroke-linecap': 'round', opacity: metal ? '0.9' : '0.6' });
+  const fill = dark ? '#16161d' : color;
+  el(svg, 'path', { d: BODY, fill, stroke: dark ? color : '#fff', 'stroke-width': dark ? '2' : '3' });
+  if (!dark) el(svg, 'path', { d: 'M30 50 C36 36 48 28 58 26', fill: 'none', stroke: '#fff', 'stroke-width': '5', 'stroke-linecap': 'round', opacity: '0.6' });
 
   // face
   const ink = '#222';
   const rect = (x: number, c: string) => el(svg, 'rect', { class: 'eye', x: String(x), y: '70', width: '6', height: '14', rx: '2', fill: c });
-  if (has('aho')) {
+  if (has('oyaji')) {
+    // panda-like: dark patches, big ringed eyes, little nose and a single hair
+    el(svg, 'ellipse', { cx: '84', cy: '50', rx: '11', ry: '7', transform: 'rotate(28 84 50)', fill: '#111' });
+    el(svg, 'ellipse', { cx: '12', cy: '88', rx: '6', ry: '12', fill: '#111' });
+    el(svg, 'ellipse', { cx: '107', cy: '84', rx: '6', ry: '13', fill: '#111' });
+    el(svg, 'path', { d: 'M58 20 C55 10 60 2 66 6', fill: 'none', stroke: '#111', 'stroke-width': '3', 'stroke-linecap': 'round' });
+    for (const x of [40, 80]) {
+      el(svg, 'circle', { cx: String(x), cy: '88', r: '13', fill: '#111' });
+      el(svg, 'circle', { class: 'eye', cx: String(x), cy: '88', r: '8', fill: '#fff' });
+      el(svg, 'circle', { cx: String(x), cy: '88', r: '4', fill: '#111' });
+    }
+    el(svg, 'ellipse', { cx: '60', cy: '106', rx: '5', ry: '3.5', fill: '#111' });
+  } else if (has('aho')) {
     el(svg, 'circle', { cx: '44', cy: '66', r: '6', fill: '#1d2548' });
     el(svg, 'circle', { cx: '74', cy: '66', r: '6', fill: '#1d2548' });
     el(svg, 'path', { d: 'M46 82 Q60 96 74 82', fill: 'none', stroke: '#1d2548', 'stroke-width': '3', 'stroke-linecap': 'round' });
@@ -118,7 +137,7 @@ export function sprite(color: string, size: number, forms: Form[] = [], opts: { 
     el(svg, 'circle', { cx: '60', cy: '76', r: '7', fill: '#1b1b2a' });
     el(svg, 'path', { d: 'M86 62 L88 30 M84 36 L88 28 L92 36', fill: 'none', stroke: '#d22', 'stroke-width': '3', 'stroke-linecap': 'round' });
   } else rect(44, dark ? '#ffe84a' : has('devil') ? '#3a6bff' : ink), rect(70, dark ? '#ffe84a' : has('devil') ? '#3a6bff' : ink);
-  if (!has('aho') && !has('zombie') && !dark) {
+  if (!has('aho') && !has('zombie') && !has('oyaji') && !dark) {
     el(svg, 'ellipse', { cx: '34', cy: '88', rx: '6', ry: '3', fill: '#e55', opacity: '0.8' });
     el(svg, 'ellipse', { cx: '86', cy: '88', rx: '6', ry: '3', fill: '#e55', opacity: '0.8' });
   }

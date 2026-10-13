@@ -150,3 +150,72 @@ describe('point transfer (original rule)', () => {
     }
   });
 });
+
+describe('original ladder mechanics', () => {
+  const rawDb = (g: Game) => (g as unknown as { db: import('node:sqlite').DatabaseSync }).db;
+  const STRONG = { weight: 250, hp: 2700, stm: 2000, str: 270, dex: 270, agl: 270, cst: 250, sex: 50, spd: 570 };
+  const WEAK = { weight: 50, hp: 500, stm: 500, str: 50, dex: 50, agl: 50, cst: 50, sex: 50, spd: 50 };
+
+  it('a mating advances every ranked slime\'s seed gauge and a full gauge grows a seed', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(3), cooldownMin: 0 });
+    const db = rawDb(g);
+    const ids = g.ranking().map((s) => s.id);
+    const target = ids[5]!;
+    db.prepare('UPDATE slimes SET sperm = 499 WHERE id = ?').run(target); // SEED_GAGE is 500
+    const before = (db.prepare('SELECT seeds FROM slimes WHERE id = ?').get(target) as { seeds: number }).seeds;
+    const e = g.enter('breeder', 'pw');
+    if (!e.ok) throw new Error('enter');
+    g.mate(e.token, ids[0]!);
+    const after = db.prepare('SELECT seeds, sperm FROM slimes WHERE id = ?').get(target) as { seeds: number; sperm: number };
+    expect(after.seeds).toBe(before + 1);
+    expect(after.sperm).toBeLessThan(100);
+    const chosen = db.prepare('SELECT seeds FROM slimes WHERE id = ?').get(ids[0]!) as { seeds: number };
+    expect(chosen.seeds).toBeLessThanOrEqual(5); // spent one, at most regrown one
+  });
+
+  it('divides the whole ladder when the lowest slime reaches three digits of points', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(4), cooldownMin: 0 });
+    const db = rawDb(g);
+    db.prepare('UPDATE slimes SET points = points * 1000 + 500').run(); // lowest becomes 3500+ -> cut by 10^2
+    const lowestBefore = (db.prepare('SELECT MIN(points) AS m FROM slimes').get() as { m: number }).m;
+    const e = g.enter('cut', 'pw');
+    if (!e.ok) throw new Error('enter');
+    g.mate(e.token, e.mates[0]!.id);
+    g.fight(e.token, 'Cutter');
+    const lowestAfter = (db.prepare('SELECT MIN(points) AS m FROM slimes WHERE ranked = 1').get() as { m: number }).m;
+    expect(lowestBefore).toBeGreaterThanOrEqual(3500);
+    expect(lowestAfter).toBeLessThan(lowestBefore / 50);
+  });
+
+  it('plays a title defense match when a slime other than the champion ends up with more points', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(6), cooldownMin: 0 });
+    const db = rawDb(g);
+    const [champ, ranger] = g.ranking().slice(0, 2);
+    db.prepare('UPDATE slimes SET stats = ?, points = 5 WHERE id = ?').run(JSON.stringify(WEAK), champ!.id);
+    db.prepare('UPDATE slimes SET stats = ?, points = 900 WHERE id = ?').run(JSON.stringify(STRONG), ranger!.id);
+    // everyone else is weak and low so the newcomer's route is short
+    db.prepare('UPDATE slimes SET points = 1 WHERE id NOT IN (?, ?)').run(champ!.id, ranger!.id);
+    const e = g.enter('challenger', 'pw');
+    if (!e.ok) throw new Error('enter');
+    g.mate(e.token, e.mates.find((m) => m.id !== ranger!.id && m.id !== champ!.id)!.id);
+    db.prepare('UPDATE slimes SET stats = ? WHERE id = (SELECT pending_id FROM users WHERE name = ?)').run(JSON.stringify(WEAK), 'challenger');
+    const f = g.fight(e.token, 'Newbie');
+    // the strong ranger out-scored the weak champion: a defense match is played and the ranger takes the crown
+    expect(f.defense).not.toBeNull();
+    expect(f.defense!.challenger.id).toBe(ranger!.id);
+    expect(f.defense!.championHeld).toBe(false);
+    expect(g.ranking()[0]!.id).toBe(ranger!.id);
+  });
+
+  it('stores stats, colour and mutant type at birth and keeps them stable', () => {
+    const g = new Game(openDb(':memory:'), { rng: seeded(9), cooldownMin: 0 });
+    const e = g.enter('stable', 'pw');
+    if (!e.ok) throw new Error('enter');
+    const m = g.mate(e.token, e.mates[0]!.id);
+    const f = g.fight(e.token, 'Fixed');
+    expect(f.slime.stats).toEqual(m.child.stats);
+    expect(f.slime.color).toBe(m.child.color);
+    expect(f.slime.kind).toBe(m.child.kind);
+    expect(f.slime.color).toMatch(/^#[0-9a-f]{6}$/);
+  });
+});

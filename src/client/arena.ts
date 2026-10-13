@@ -1,5 +1,4 @@
 import type { BattleReport } from '../shared/battle.ts';
-import { spriteSize } from '../shared/stats.ts';
 import type { SlimeView } from '../shared/types.ts';
 import { h } from './dom.ts';
 import { confetti, floatText, reduceMotion, sleep } from './fx.ts';
@@ -13,12 +12,12 @@ interface Side {
   hpText: HTMLElement;
 }
 
-function side(s: Pick<SlimeView, 'name' | 'color' | 'stats' | 'forms'>, maxHp: number, flip: boolean): Side {
-  const size = Math.min(200, Math.round(spriteSize(s.stats.weight) * 1.5));
+function side(s: Pick<SlimeView, 'name' | 'color' | 'kind' | 'px'>, maxHp: number, flip: boolean): Side {
+  const size = Math.min(200, Math.round(s.px * 1.5));
   const hp = h('div', { class: 'bar-fill hp' });
   const stm = h('div', { class: 'bar-fill stm' });
   const hpText = h('span', { class: 'bar-text' }, `${maxHp}`);
-  const body = h('div', { class: 'fighter-body' }, sprite(s.color, size, s.forms ?? [], { flip }));
+  const body = h('div', { class: 'fighter-body' }, sprite(s.color, size, s.kind, { flip }));
   const root = h(
     'div',
     { class: 'fighter' },
@@ -41,7 +40,7 @@ export interface Arena {
  * Animated replay of one battle. Left = the challenger. The ledger below the
  * arena (numbers, log) is shown by the caller once `play()` resolves.
  */
-export function arena(me: Pick<SlimeView, 'name' | 'color' | 'stats' | 'forms'>, foe: SlimeView, rep: BattleReport, title: boolean): Arena {
+export function arena(me: Pick<SlimeView, 'name' | 'color' | 'kind' | 'px'>, foe: SlimeView, rep: BattleReport, title: boolean): Arena {
   const A = side(me, rep.a.maxHp, false);
   const B = side(foe, rep.b.maxHp, true);
   const caption = h('div', { class: 'arena-caption' }, title ? 'TITLE MATCH!' : 'Fight!');

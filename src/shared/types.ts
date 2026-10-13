@@ -1,6 +1,6 @@
 import type { BattleReport } from './battle.ts';
-import type { MutationName } from './dna.ts';
-import type { Stats } from './stats.ts';
+import type { Kind } from './dna.ts';
+import type { ShownStats, Stats } from './stats.ts';
 
 /** Compact ancestry tree: `a` is the owner's side, `b` the mate's side. */
 export interface Pedigree {
@@ -17,10 +17,15 @@ export interface SlimeView {
   gen: number;
   owner: string;
   born: string;
+  /** full-size stats used in battle */
   stats: Stats;
+  /** the same numbers scaled for display (see `dispCut`) */
+  shown: ShownStats;
   color: string;
-  /** visible mutations (absent on very old saved snapshots) */
-  forms?: MutationName[];
+  /** visible mutant type (cosmetic) */
+  kind: Kind;
+  /** sprite edge in px */
+  px: number;
   seeds: number;
   children: number;
   wins: number;
@@ -63,7 +68,7 @@ export interface FightStep {
   opponent: SlimeView;
   report: BattleReport;
   won: boolean;
-  /** the special match against the reigning champion */
+  /** the fight against the reigning champion */
   title: boolean;
   gained: number;
   /** on a loss: the challenger's collected points that went to the defender */
@@ -71,10 +76,19 @@ export interface FightStep {
   total: number;
 }
 
+/** A defense match between the ladder's top challenger and the champion (not involving the player's slime). */
+export interface DefenseMatch {
+  challenger: SlimeView;
+  champion: SlimeView;
+  report: BattleReport;
+  championHeld: boolean;
+}
+
 export interface FightResponse {
   ok: true;
   slime: SlimeView;
   steps: FightStep[];
+  defense: DefenseMatch | null;
   finalPoints: number;
   finalRank: number | null;
 }

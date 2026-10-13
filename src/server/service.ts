@@ -1,12 +1,13 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { fight } from '../shared/battle.ts';
-import { type Dna, breed, founderDna } from '../shared/dna.ts';
-import { HALL_MIN_DEFENSES, MATES_SEEDS, RANK_SIZE, nextOpponent, normalizePoints, pointsForWin } from '../shared/ladder.ts';
+import { type BattleReport, fight } from '../shared/battle.ts';
+import { type Dna, type Kind, colorOf, eveDna, express, kindOf, mix, mutate } from '../shared/dna.ts';
+import { HALL_MIN_DEFENSES, RANK_SIZE, SEED_GAGE, cutLength, mustFight, scalePoints } from '../shared/ladder.ts';
 import { type Rng } from '../shared/rng.ts';
-import { deriveColor, deriveForms, deriveStats } from '../shared/stats.ts';
+import { type Stats, deriveStats, dispCut, shownStats, spriteSize } from '../shared/stats.ts';
 import type {
   CommentView,
+  DefenseMatch,
   EnterResponse,
   FightResponse,
   FightStep,
@@ -24,6 +25,9 @@ export const MAX_SLIME_NAME = 36;
 export const MAX_COMMENT = 300;
 const SESSION_TTL = 3_600_000;
 
+/** Eve, the founder every account starts with (values from the original). */
+const EVE_STATS: Stats = { weight: 50, hp: 500, stm: 500, str: 50, dex: 50, agl: 50, cst: 50, sex: 50, spd: 50 };
+
 export class GameError extends Error {}
 
 interface SlimeRow {
@@ -32,6 +36,10 @@ interface SlimeRow {
   name: string;
   gen: number;
   dna: string;
+  stats: string;
+  color: string;
+  kind: string;
+  sperm: number;
   born: number;
   seeds: number;
   children: number;
@@ -67,6 +75,8 @@ export interface ServiceOptions {
   seedLadder?: boolean;
 }
 
+const statsOf = (r: SlimeRow) => JSON.parse(r.stats) as Stats;
+
 export class Game {
   private readonly rng: Rng;
   private readonly now: () => number;
@@ -84,17 +94,18 @@ export class Game {
     if (opts.seedLadder ?? true) this.seedLadder();
   }
 
-  /** Creation story: Lord Creator's first generation, so the ladder is never empty. */
+  /** Creation story: Lord Creator's first generation (Eve x unknown seeds), so the ladder is never empty. */
   private seedLadder() {
     const n = (this.db.prepare('SELECT COUNT(*) AS n FROM slimes').get() as { n: number }).n;
     if (n > 0) return;
     const names = ['Adam Jr', 'Clay', 'Gummy', 'Bubble', 'Jelly', 'Goo', 'Blobby', 'Squish', 'Pudding', 'Mochi'];
     const ins = this.db.prepare(
-      'INSERT INTO slimes (owner, name, gen, dna, born, seeds, points, champ, ranked, best_rank) VALUES (?,?,?,?,?,?,?,?,1,?)',
+      'INSERT INTO slimes (owner, name, gen, dna, stats, color, kind, born, seeds, points, champ, ranked, best_rank) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)',
     );
-    names.forEach((name, i) =>
-      ins.run('LordCreator', name, 1, JSON.stringify(founderDna(this.rng)), this.now(), MATES_SEEDS, (names.length - i) * 3, i === 0 ? 1 : 0, i + 1),
-    );
+    names.forEach((name, i) => {
+      const c = this.makeChild(eveDna(), null, 50);
+      ins.run('LordCreator', name, 1, JSON.stringify(c.dna), JSON.stringify(c.stats), c.color, c.kind, this.now(), Math.trunc(c.stats.sex / 10), (names.length - i) * 3, i === 0 ? 1 : 0, i + 1);
+    });
   }
 
   // ---------- helpers ----------
@@ -122,8 +133,22 @@ export class Game {
       .all() as unknown as SlimeRow[];
   }
 
-  private view(row: SlimeRow, ladder = this.ladder()): SlimeView {
-    const dna = JSON.parse(row.dna) as Dna;
+  /** Average weight of the ranked slimes: drives gene stability, display digits and sprite scale. */
+  private avgWeight(ladder: SlimeRow[]): number {
+    if (!ladder.length) return 50;
+    return Math.trunc(ladder.reduce((s, r) => s + statsOf(r).weight, 0) / ladder.length) || 50;
+  }
+
+  /** Breed a child: stats come from the pre-mutation genes, colour and form from the mutated ones. */
+  private makeChild(owner: Dna, mate: { dna: Dna; weight: number } | null, avg: number) {
+    const birth = mix(owner, mate, avg, this.rng);
+    const stats = deriveStats(express(birth.dna, birth.range));
+    const dna = mutate(birth.dna, this.rng);
+    const p = express(dna, birth.range);
+    return { dna, stats, color: colorOf(p), kind: kindOf(p) as Kind };
+  }
+
+  private view(row: SlimeRow, ladder = this.ladder(), avg = this.avgWeight(ladder)): SlimeView {
     const idx = ladder.findIndex((r) => r.id === row.id);
     const ped = row.ped ? (JSON.parse(row.ped) as Pedigree) : null;
     const rankedSet = new Set(ladder.map((r) => r.id));
@@ -135,15 +160,18 @@ export class Game {
       walk(p.b);
     };
     walk(ped ?? undefined);
+    const stats = statsOf(row);
     return {
       id: row.id,
       name: row.name,
       gen: row.gen,
       owner: row.owner,
       born: new Date(row.born).toISOString(),
-      stats: deriveStats(dna),
-      color: deriveColor(dna),
-      forms: deriveForms(dna),
+      stats,
+      shown: shownStats(stats, dispCut(avg)),
+      color: row.color,
+      kind: row.kind as Kind,
+      px: spriteSize(stats.weight, avg),
       seeds: row.seeds,
       children: row.children,
       wins: row.wins,
@@ -250,10 +278,9 @@ export class Game {
   }
 
   private createFounder(owner: string): number {
-    const dna = founderDna(this.rng);
     const res = this.db
-      .prepare('INSERT INTO slimes (owner, name, gen, dna, born, seeds, points) VALUES (?,?,?,?,?,?,1)')
-      .run(owner, 'FirstChild', 0, JSON.stringify(dna), this.now(), MATES_SEEDS);
+      .prepare('INSERT INTO slimes (owner, name, gen, dna, stats, color, kind, born, seeds, points) VALUES (?,?,?,?,?,?,?,?,?,1)')
+      .run(owner, 'FirstChild', 0, JSON.stringify(eveDna()), JSON.stringify(EVE_STATS), '#7f7f7f', 'normal', this.now(), 5);
     return Number(res.lastInsertRowid);
   }
 
@@ -266,12 +293,11 @@ export class Game {
       if (!mate || !mate.ranked) throw new GameError('That slime is not on the ranking.');
       if (mate.seeds <= 0) throw new GameError('That slime has no seeds left.');
 
-      const dna = breed(JSON.parse(mother.dna) as Dna, JSON.parse(mate.dna) as Dna, this.rng);
-      const ped: Pedigree = {
-        id: 0,
-        name: 'NoNameYet',
-        gen: mother.gen + 1,
-      };
+      const ladder = this.ladder();
+      const avg = this.avgWeight(ladder);
+      const c = this.makeChild(JSON.parse(mother.dna) as Dna, { dna: JSON.parse(mate.dna) as Dna, weight: statsOf(mate).weight }, avg);
+
+      const ped: Pedigree = { id: 0, name: 'NoNameYet', gen: mother.gen + 1 };
       const a = Game.trim(Game.pedOf(mother), 2);
       const b = Game.trim(Game.pedOf(mate), 2);
       if (a) ped.a = a;
@@ -279,13 +305,26 @@ export class Game {
 
       const res = this.db
         .prepare(
-          'INSERT INTO slimes (owner, name, gen, dna, born, seeds, points, ped) VALUES (?,?,?,?,?,?,1,?)',
+          'INSERT INTO slimes (owner, name, gen, dna, stats, color, kind, born, seeds, points, ped) VALUES (?,?,?,?,?,?,?,?,?,1,?)',
         )
-        .run(u.name, 'NoNameYet', mother.gen + 1, JSON.stringify(dna), this.now(), MATES_SEEDS, null);
+        .run(u.name, 'NoNameYet', mother.gen + 1, JSON.stringify(c.dna), JSON.stringify(c.stats), c.color, c.kind, this.now(), Math.trunc(c.stats.sex / 10), null);
       const id = Number(res.lastInsertRowid);
       ped.id = id;
       this.db.prepare('UPDATE slimes SET ped = ? WHERE id = ?').run(JSON.stringify(ped), id);
-      this.db.prepare('UPDATE slimes SET seeds = seeds - 1, children = children + 1 WHERE id = ?').run(mate.id);
+
+      // the chosen seed is spent; then every ranked slime's seed gauge advances by its SEX
+      mate.seeds -= 1;
+      mate.children += 1;
+      const save = this.db.prepare('UPDATE slimes SET seeds = ?, children = ?, sperm = ? WHERE id = ?');
+      for (const r of ladder) {
+        const row = r.id === mate.id ? mate : r;
+        row.sperm += statsOf(row).sex;
+        if (row.sperm > SEED_GAGE) {
+          row.sperm -= SEED_GAGE;
+          row.seeds += 1;
+        }
+        save.run(row.seeds, row.children, row.sperm, row.id);
+      }
       this.db.prepare('UPDATE users SET pending_id = ? WHERE name = ?').run(id, u.name);
       return { ok: true as const, child: this.view(this.slime(id)!) };
     });
@@ -302,76 +341,97 @@ export class Game {
       this.db.prepare('UPDATE slimes SET name = ?, ped = ? WHERE id = ?').run(name, JSON.stringify(ped), child.id);
       child.name = name;
 
-      const myStats = deriveStats(JSON.parse(child.dna) as Dna);
       const ladder = this.ladder();
-      const champ = ladder.find((r) => r.champ) ?? null;
-      const beaten = new Set<number>();
+      const avg = this.avgWeight(ladder);
+      // totals are divided down when the lowest ranked slime's points reach three digits
+      const cut = cutLength(ladder.at(-1)?.points ?? 1);
+      for (const r of ladder) r.points = scalePoints(r.points, cut);
+
+      const champ = ladder[0] ?? null;
+      const myStats = statsOf(child);
       const steps: FightStep[] = [];
       let points = 1;
       let lost = false;
 
       const duel = (opp: SlimeRow, title: boolean): boolean => {
-        const rep = fight(child.name, myStats, opp.name, deriveStats(JSON.parse(opp.dna) as Dna), this.rng);
+        const rep = fight(child.name, myStats, opp.name, statsOf(opp), this.rng);
         const won = rep.winner === 'a';
-        const gained = won ? pointsForWin(opp) : 0;
         const given = won ? 0 : points;
-        points += gained;
-        steps.push({ opponent: this.view(opp, ladder), report: rep, won, title, gained, given, total: points });
+        const gained = won ? opp.points : 0; // a victor takes over the beaten slime's points
+        steps.push({ opponent: this.view(opp, ladder, avg), report: rep, won, title, gained, given, total: points + gained });
         if (won) {
+          points += gained;
           child.wins++;
           child.streak++;
           opp.losses++;
-          opp.streak = 0;
         } else {
+          opp.points += given; // the slime that ends a run collects everything the challenger had
           child.losses++;
           child.streak = 0;
           opp.wins++;
-          opp.streak++;
-          opp.points += given; // the defender collects the challenger's whole run
+          if (title) opp.defenses++;
         }
         return won;
       };
 
-      for (let guard = 0; guard < RANK_SIZE + 5; guard++) {
-        const pick = nextOpponent(ladder, points, beaten);
-        if (!pick) break;
-        const opp = ladder.find((r) => r.id === pick.id)!;
-        beaten.add(opp.id);
-        const won = duel(opp, opp.id === champ?.id);
-        if (!won) {
-          lost = true;
-          if (opp.id === champ?.id) champ.defenses++;
-          break;
-        }
+      // fight upward from the bottom of the ladder until the first defeat
+      for (let r = ladder.length; r >= 1 && !lost; r--) {
+        const opp = ladder[r - 1]!;
+        if (!mustFight(r, opp.points, points)) continue;
+        if (!duel(opp, r === 1)) lost = true;
       }
 
-      // Beating the reigning champion while holding more points ends the reign.
-      let newChamp = false;
-      if (!champ) {
-        newChamp = !lost; // empty ladder: the first winner takes the crown
-      } else if (!lost && points > champ.points) {
-        newChamp = true;
-        if (champ.defenses >= HALL_MIN_DEFENSES) this.enterHall(champ, ladder);
-        champ.champ = 0;
-        champ.defenses = 0;
-      }
-
+      // everyone but the champion, sorted by points; ties keep the original's odd order (newcomer first, lowest rank next)
+      const rest = [child, ...ladder.slice(1).reverse()];
       child.points = points;
-      child.champ = newChamp ? 1 : 0;
-      child.ranked = 1; // provisional; trimmed below
+      rest.sort((a, b) => b.points - a.points);
+      const ranger = rest[0]!;
+
+      let order: SlimeRow[];
+      let defense: DefenseMatch | null = null;
+      if (!champ) {
+        order = rest; // empty ladder: the newcomer simply is the champion
+      } else if (champ.points < ranger.points) {
+        // someone out-scored the champion: either the challenger toppled them, or a title defense is played
+        let dethroned = !lost;
+        if (lost) {
+          const rep = fight(ranger.name, statsOf(ranger), champ.name, statsOf(champ), this.rng);
+          const rangerWon = rep.winner === 'a';
+          defense = { challenger: this.view(ranger, ladder, avg), champion: this.view(champ, ladder, avg), report: rep, championHeld: !rangerWon };
+          if (rangerWon) {
+            ranger.points += champ.points;
+            ranger.wins++;
+            champ.losses++;
+            dethroned = true;
+          } else {
+            champ.points += ranger.points;
+            champ.wins++;
+            ranger.losses++;
+            champ.defenses++;
+          }
+        }
+        const others = rest.filter((r) => r !== ranger);
+        if (dethroned) {
+          if (champ.defenses >= HALL_MIN_DEFENSES) this.enterHall(champ, ladder, avg);
+          champ.defenses = 0;
+          order = [ranger, champ, ...others];
+        } else {
+          order = [champ, ranger, ...others];
+        }
+      } else {
+        order = [champ, ...rest];
+      }
 
       const save = this.db.prepare(
-        'UPDATE slimes SET wins=?, losses=?, streak=?, points=?, defenses=?, champ=?, ranked=?, best_rank=? WHERE id=?',
+        'UPDATE slimes SET wins=?, losses=?, streak=?, points=?, defenses=?, champ=?, ranked=?, best_rank=?, seeds=? WHERE id=?',
       );
-      const all = [...ladder, child];
-      const scaled = normalizePoints(all.map((r) => r.points));
-      all.forEach((r, i) => (r.points = scaled[i]!));
-      all.sort((a, b) => b.champ - a.champ || b.points - a.points || a.id - b.id);
-      all.forEach((r, i) => {
+      child.seeds = Math.trunc(myStats.sex / 10);
+      order.forEach((r, i) => {
         const rank = i + 1;
         r.ranked = rank <= RANK_SIZE ? 1 : 0;
-        r.best_rank = r.ranked ? (r.best_rank ? Math.min(r.best_rank, rank) : rank) : r.best_rank;
-        save.run(r.wins, r.losses, r.streak, r.points, r.defenses, r.champ, r.ranked, r.best_rank, r.id);
+        r.champ = i === 0 ? 1 : 0;
+        if (r.ranked) r.best_rank = r.best_rank ? Math.min(r.best_rank, rank) : rank;
+        save.run(r.wins, r.losses, r.streak, r.points, r.defenses, r.champ, r.ranked, r.best_rank, r.seeds, r.id);
       });
 
       this.db.prepare('UPDATE users SET mother_id = ?, pending_id = NULL, last_play = ?, last_seen = ? WHERE name = ?').run(
@@ -383,18 +443,13 @@ export class Game {
 
       const after = this.ladder();
       const final = this.slime(child.id)!;
-      return {
-        ok: true as const,
-        slime: this.view(final, after),
-        steps,
-        finalPoints: points,
-        finalRank: this.view(final, after).rank,
-      };
+      const fv = this.view(final, after);
+      return { ok: true as const, slime: fv, steps, defense, finalPoints: points, finalRank: fv.rank };
     });
   }
 
-  private enterHall(champ: SlimeRow, ladder: SlimeRow[]) {
-    const snap = this.view(champ, ladder);
+  private enterHall(champ: SlimeRow, ladder: SlimeRow[], avg: number) {
+    const snap = this.view(champ, ladder, avg);
     this.db
       .prepare('INSERT INTO hall (at, defenses, snapshot) VALUES (?,?,?)')
       .run(this.now(), champ.defenses, JSON.stringify(snap));
@@ -404,7 +459,8 @@ export class Game {
 
   ranking(): SlimeView[] {
     const ladder = this.ladder();
-    return ladder.map((r) => this.view(r, ladder));
+    const avg = this.avgWeight(ladder);
+    return ladder.map((r) => this.view(r, ladder, avg));
   }
 
   hall(): HallEntry[] {
@@ -450,3 +506,5 @@ export class Game {
     });
   }
 }
+
+export type { BattleReport };
