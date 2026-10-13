@@ -5,18 +5,36 @@ evolution ladder game once hosted at `cgi.heyuri.net/slime/`. Rules, genetics an
 ported from the author's own **SLIME BREEDER plus v1.08** source. **See [NOTICE.md](NOTICE.md)** for credits and
 the licence terms (modified redistribution allowed with credit, **non-commercial**).
 
-## Run
+## Run locally
 
 ```sh
 npm install
-npm run build          # client -> dist/
-npm start              # http://localhost:3000 (SQLite file: ./slime.db)
+npm run build          # client -> dist/ and the Vercel function bundle -> api/
+npm start              # http://localhost:3000, data in ./slime.db (SQLite file)
 npm test
 ```
 
 Dev: `npm run dev:server` + `npm run dev:client` (Vite proxies `/api`). All mutant sprites: `/gallery.html`.
-Env: `PORT`, `SLIME_DB` (db path), `SLIME_COOLDOWN_MIN` (default 15, `0` to disable).
-Requires Node >= 22.13 (built-in `node:sqlite`). A database from an older schema is refused, not misread.
+Environment (see `.env.example`): `PORT`, `SLIME_DB` (local db path), `SLIME_COOLDOWN_MIN` (default 15, `0` to disable),
+`TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` (use a remote Turso database instead of the local file).
+A database from an incompatible schema is refused, not misread.
+
+## Deploy: Vercel + Turso (free tiers)
+
+The data layer is libSQL, so the same code runs on a local SQLite file or on Turso. On Vercel the API is one
+self-contained function (`api/[...path].js`, bundled from `src/server` by `scripts/build-api.mjs`; **commit it
+after changing server code** — `npm test` fails if it is stale) and the client is static.
+
+1. **Turso:** create a database, then note its URL (`libsql://…`) and create an auth token
+   (`turso db create slime-breeder`, `turso db show slime-breeder --url`, `turso db tokens create slime-breeder`,
+   or use the Turso dashboard). Tables are created and the world is seeded automatically on the first request.
+2. **Vercel:** import this GitHub repository, use the branch you want as production. `vercel.json` already sets the
+   build (`npm run build`), output (`dist`), the function and a daily cleanup cron. Add environment variables:
+   `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, and `CRON_SECRET` (any long random string).
+3. Deploy, then open `https://<your-app>.vercel.app/` and `/api/rank`.
+
+Optional check against a scratch remote database (writes test data!):
+`TURSO_DATABASE_URL=… TURSO_AUTH_TOKEN=… npm run smoke:remote`.
 
 ## What is ported from the original source
 
@@ -60,7 +78,7 @@ Korean (default) and English, switchable in the top right; server errors are cod
 
 ## What is new in this version
 
-TypeScript + Hono + SQLite server, Vite client, the UI features above, tests (including checks against numbers
+TypeScript + Hono + libSQL (SQLite file or Turso) server, Vite client, the UI features above, tests (including checks against numbers
 from the original's ranking page and guide). Regenerate sprites with
 `python3 scripts/convert_sprites.py <dir with slm*.gif> src/client/sprites.gen.ts` (needs Pillow).
 
@@ -73,4 +91,4 @@ from the original's ranking page and guide). Regenerate sprites with
 
 ## Layout
 
-`src/shared` (genes, lineages, stats, battle, ladder rules) · `src/server` (Hono API + SQLite) · `src/client` (Vite, vanilla TS)
+`src/shared` (genes, lineages, stats, battle, ladder rules) · `src/server` (Hono API + libSQL), `api/` (generated Vercel function) · `src/client` (Vite, vanilla TS)

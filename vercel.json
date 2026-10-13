@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/[...path].js": { "maxDuration": 30 }
+  },
+  "crons": [{ "path": "/api/cron/purge", "schedule": "0 4 * * *" }]
+}

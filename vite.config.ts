@@ -8,5 +8,5 @@ export default defineConfig({
     rollupOptions: { input: { main: 'src/client/index.html', gallery: 'src/client/gallery.html' } },
   },
   server: { proxy: { '/api': 'http://localhost:3000' } },
-  test: { root: '.', include: ['src/**/*.test.ts'] },
+  test: { root: '.', include: ['src/**/*.test.ts'], testTimeout: 60_000 },
 });

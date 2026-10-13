@@ -1,11 +1,11 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
+import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { type BattleReport, fight } from '../shared/battle.ts';
 import { type ErrorCode, ERROR_TEXT } from '../shared/errors.ts';
 import { type Dna, type Kind, colorOf, eveDna, express, kindOf, mix, mutate } from '../shared/dna.ts';
 import { HALL_MIN_DEFENSES, RANK_SIZE, SEED_GAGE, cutLength, mustFight, scalePoints } from '../shared/ladder.ts';
 import { type Blood, type Lin, STAT_KEYS, affinityPrint, branchNx, inherit, nixOf, poorMatch, zeroBlood } from '../shared/lineage.ts';
 import { type Rng } from '../shared/rng.ts';
+import type { Db, Stmt, Store } from './store.ts';
 import { type Stats, deriveStats, dispCut, shownStats, spriteSize } from '../shared/stats.ts';
 import type {
   CommentView,
@@ -95,82 +95,85 @@ const statsOf = (r: SlimeRow) => JSON.parse(r.stats) as Stats;
 const bloodOf = (r: SlimeRow) => JSON.parse(r.blood) as Blood;
 const father = (r: SlimeRow) => bloodOf(r)[3];
 
+const scryptAsync = (pass: string, salt: string) =>
+  new Promise<Buffer>((resolve, reject) => scrypt(pass, salt, 32, (err, key) => (err ? reject(err) : resolve(key))));
+
 export class Game {
   private readonly rng: Rng;
   private readonly now: () => number;
   private readonly cooldownMs: number;
   private readonly inactivityMs: number;
+  private readonly seed: boolean;
 
-  constructor(
-    private readonly db: DatabaseSync,
+  private constructor(
+    private readonly db: Db,
     opts: ServiceOptions = {},
   ) {
     this.rng = opts.rng ?? Math.random;
     this.now = opts.now ?? Date.now;
     this.cooldownMs = (opts.cooldownMin ?? 15) * 60_000;
     this.inactivityMs = (opts.inactivityDays ?? 7) * DAY;
-    if (opts.seedLadder ?? true) this.seedLadder();
+    this.seed = opts.seedLadder ?? true;
+  }
+
+  /** The schema must already exist (see `initSchema`). Seeds an empty world unless disabled. */
+  static async create(db: Db, opts: ServiceOptions = {}): Promise<Game> {
+    const g = new Game(db, opts);
+    if (g.seed) await g.seedLadder();
+    return g;
   }
 
   /** Creation story: Lord Creator's first generation (Eve x unknown seeds), each founding a lineage, so the ladder is never empty. */
-  private seedLadder() {
-    const n = (this.db.prepare('SELECT COUNT(*) AS n FROM slimes').get() as { n: number }).n;
-    if (n > 0) return;
-    const names = ['Adam Jr', 'Clay', 'Gummy', 'Bubble', 'Jelly', 'Goo', 'Blobby', 'Squish', 'Pudding', 'Mochi'];
-    const ins = this.db.prepare(
-      'INSERT INTO slimes (owner, name, gen, dna, stats, color, kind, blood, nix, born, seeds, points, champ, ranked, best_rank) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)',
-    );
-    names.forEach((name, i) => {
-      const c = this.makeChild(eveDna(), null, 50, zeroBlood(), null, this.nextSlimeId());
-      c.blood[3].name = name;
-      this.registerLineage(c.blood[3]);
-      ins.run('LordCreator', name, 1, JSON.stringify(c.dna), JSON.stringify(c.stats), c.color, c.kind, JSON.stringify(c.blood), c.nix, this.now(), Math.trunc(c.stats.sex / 10), (names.length - i) * 3, i === 0 ? 1 : 0, i + 1);
+  private async seedLadder() {
+    await this.db.tx(async (s) => {
+      const n = (await s.get<{ n: number }>('SELECT COUNT(*) AS n FROM slimes'))!.n;
+      if (n > 0) return;
+      const names = ['Adam Jr', 'Clay', 'Gummy', 'Bubble', 'Jelly', 'Goo', 'Blobby', 'Squish', 'Pudding', 'Mochi'];
+      const stmts: Stmt[] = [];
+      let id = await this.nextSlimeId(s);
+      names.forEach((name, i) => {
+        const c = this.makeChild(eveDna(), null, 50, zeroBlood(), null, id);
+        c.blood[3].name = name;
+        stmts.push(this.lineageStmt(c.blood[3]));
+        stmts.push({
+          sql: 'INSERT INTO slimes (owner, name, gen, dna, stats, color, kind, blood, nix, born, seeds, points, champ, ranked, best_rank) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)',
+          args: ['LordCreator', name, 1, JSON.stringify(c.dna), JSON.stringify(c.stats), c.color, c.kind, JSON.stringify(c.blood), c.nix, this.now(), Math.trunc(c.stats.sex / 10), (names.length - i) * 3, i === 0 ? 1 : 0, i + 1],
+        });
+        id++;
+      });
+      await s.batch(stmts);
     });
   }
 
-  private nextSlimeId(): number {
-    const r = this.db.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'slimes'").get() as { seq: number } | undefined;
+  private async nextSlimeId(s: Store): Promise<number> {
+    const r = await s.get<{ seq: number }>("SELECT seq FROM sqlite_sequence WHERE name = 'slimes'");
     return (r?.seq ?? 0) + 1;
   }
 
-  private registerLineage(l: Lin, old: Lin[] = []) {
-    this.db.prepare('INSERT OR REPLACE INTO lineages (no, name, nx, old) VALUES (?,?,?,?)').run(l.no, l.name, l.nx, JSON.stringify(old));
+  private lineageStmt(l: Lin, old: Lin[] = []): Stmt {
+    return { sql: 'INSERT OR REPLACE INTO lineages (no, name, nx, old) VALUES (?,?,?,?)', args: [l.no, l.name, l.nx, JSON.stringify(old)] };
   }
 
-  private lineageOld(no: number): Lin[] {
-    const r = this.db.prepare('SELECT old FROM lineages WHERE no = ?').get(no) as { old: string } | undefined;
+  private async lineageOld(s: Store, no: number): Promise<Lin[]> {
+    const r = await s.get<{ old: string }>('SELECT old FROM lineages WHERE no = ?', [no]);
     return r ? (JSON.parse(r.old) as Lin[]) : [];
   }
 
   // ---------- helpers ----------
 
-  private tx<T>(fn: () => T): T {
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      const r = fn();
-      this.db.exec('COMMIT');
-      return r;
-    } catch (e) {
-      this.db.exec('ROLLBACK');
-      throw e;
-    }
-  }
-
-  private slime(id: number): SlimeRow | undefined {
-    return this.db.prepare('SELECT * FROM slimes WHERE id = ?').get(id) as SlimeRow | undefined;
+  private slime(s: Store, id: number): Promise<SlimeRow | undefined> {
+    return s.get<SlimeRow>('SELECT * FROM slimes WHERE id = ?', [id]);
   }
 
   /** Ladder order: champion first, then points, then seniority. */
-  private ladder(): SlimeRow[] {
-    return this.db
-      .prepare('SELECT * FROM slimes WHERE ranked = 1 ORDER BY champ DESC, points DESC, id ASC')
-      .all() as unknown as SlimeRow[];
+  private ladder(s: Store): Promise<SlimeRow[]> {
+    return s.all<SlimeRow>('SELECT * FROM slimes WHERE ranked = 1 ORDER BY champ DESC, points DESC, id ASC');
   }
 
   /** Average weight of the ranked slimes: drives gene stability, display digits and sprite scale. */
   private avgWeight(ladder: SlimeRow[]): number {
     if (!ladder.length) return 50;
-    return Math.trunc(ladder.reduce((s, r) => s + statsOf(r).weight, 0) / ladder.length) || 50;
+    return Math.trunc(ladder.reduce((sum, r) => sum + statsOf(r).weight, 0) / ladder.length) || 50;
   }
 
   /** Breed a child: stats come from the pre-mutation genes (and the lineage "nicks"), colour and form from the mutated ones. */
@@ -184,7 +187,7 @@ export class Game {
     return { dna, stats, color: colorOf(p), kind: kindOf(p) as Kind, blood, nix: nix.print };
   }
 
-  private view(row: SlimeRow, ladder = this.ladder(), avg = this.avgWeight(ladder)): SlimeView {
+  private view(row: SlimeRow, ladder: SlimeRow[], avg: number): SlimeView {
     const idx = ladder.findIndex((r) => r.id === row.id);
     const ped = row.ped ? (JSON.parse(row.ped) as Pedigree) : null;
     const rankedSet = new Set(ladder.map((r) => r.id));
@@ -223,8 +226,14 @@ export class Game {
     };
   }
 
-  private static hash(pass: string, salt: string): string {
-    return scryptSync(pass, salt, 32).toString('hex');
+  private static async hash(pass: string, salt: string): Promise<string> {
+    return (await scryptAsync(pass, salt)).toString('hex');
+  }
+
+  private static async verify(pass: string, u: UserRow): Promise<boolean> {
+    const a = await scryptAsync(pass, u.salt);
+    const b = Buffer.from(u.hash, 'hex');
+    return a.length === b.length && timingSafeEqual(a, b);
   }
 
   private static trim(p: Pedigree | undefined, depth: number): Pedigree | undefined {
@@ -244,43 +253,46 @@ export class Game {
     return { ...base, id: r.id, name: r.name, gen: r.gen };
   }
 
-  private userByToken(token: string): UserRow {
+  private async userByToken(s: Store, token: string): Promise<UserRow> {
     const now = this.now();
-    const s = this.db.prepare('SELECT user, created FROM sessions WHERE token = ?').get(token) as
-      | { user: string; created: number }
-      | undefined;
-    if (!s || now - s.created > SESSION_TTL) throw new GameError('session');
-    const u = this.db.prepare('SELECT * FROM users WHERE name = ?').get(s.user) as UserRow | undefined;
+    const sess = await s.get<{ user: string; created: number }>('SELECT user, created FROM sessions WHERE token = ?', [token]);
+    if (!sess || now - sess.created > SESSION_TTL) throw new GameError('session');
+    const u = await s.get<UserRow>('SELECT * FROM users WHERE name = ?', [sess.user]);
     if (!u) throw new GameError('no-account');
     return u;
   }
 
   // ---------- account / flow ----------
 
-  enter(userRaw: string, pass: string): EnterResponse {
+  async enter(userRaw: string, pass: string): Promise<EnterResponse> {
     const user = userRaw.trim();
     if (!user || user.length > MAX_USER) throw new GameError('bad-user');
     if (!pass || pass.length > MAX_PASS) throw new GameError('bad-pass');
 
-    return this.tx(() => {
+    // password hashing is slow: do it before taking the write lock
+    const existing = await this.db.get<UserRow>('SELECT * FROM users WHERE name = ?', [user]);
+    let fresh: { salt: string; hash: string } | null = null;
+    if (existing) {
+      if (!(await Game.verify(pass, existing))) throw new GameError('wrong-pass');
+    } else {
+      const salt = randomBytes(16).toString('hex');
+      fresh = { salt, hash: await Game.hash(pass, salt) };
+    }
+
+    return this.db.tx(async (s) => {
       const now = this.now();
-      let u = this.db.prepare('SELECT * FROM users WHERE name = ?').get(user) as UserRow | undefined;
+      let u = await s.get<UserRow>('SELECT * FROM users WHERE name = ?', [user]);
       let registered = false;
 
       if (!u) {
-        const salt = randomBytes(16).toString('hex');
-        const first = this.createFounder(user);
-        this.db
-          .prepare(
-            'INSERT INTO users (name, salt, hash, created, last_play, last_seen, mother_id) VALUES (?,?,?,?,0,?,?)',
-          )
-          .run(user, salt, Game.hash(pass, salt), now, now, first);
-        u = this.db.prepare('SELECT * FROM users WHERE name = ?').get(user) as unknown as UserRow;
+        if (!fresh) throw new GameError('no-account'); // the account was removed meanwhile
+        const first = await this.createFounder(s, user);
+        await s.run('INSERT INTO users (name, salt, hash, created, last_play, last_seen, mother_id) VALUES (?,?,?,?,0,?,?)', [user, fresh.salt, fresh.hash, now, now, first]);
+        u = (await s.get<UserRow>('SELECT * FROM users WHERE name = ?', [user]))!;
         registered = true;
-      } else {
-        const a = Buffer.from(Game.hash(pass, u.salt), 'hex');
-        const b = Buffer.from(u.hash, 'hex');
-        if (a.length !== b.length || !timingSafeEqual(a, b)) throw new GameError('wrong-pass');
+      } else if (fresh) {
+        // someone registered this name while we were hashing: it is not ours, treat as a wrong password
+        throw new GameError('wrong-pass');
       }
 
       if (!u.pending_id && u.last_play && now - u.last_play < this.cooldownMs) {
@@ -288,57 +300,61 @@ export class Game {
         throw new GameError('cooldown', { every: this.cooldownMs / 60_000, left });
       }
 
-      this.db.prepare('UPDATE users SET last_seen = ? WHERE name = ?').run(now, user);
       const token = randomBytes(24).toString('hex');
-      this.db.prepare('INSERT INTO sessions (token, user, created) VALUES (?,?,?)').run(token, user, now);
-      this.db.prepare('DELETE FROM sessions WHERE created < ?').run(now - SESSION_TTL);
+      await s.batch([
+        { sql: 'UPDATE users SET last_seen = ? WHERE name = ?', args: [now, user] },
+        { sql: 'INSERT INTO sessions (token, user, created) VALUES (?,?,?)', args: [token, user, now] },
+        { sql: 'DELETE FROM sessions WHERE created < ?', args: [now - SESSION_TTL] },
+      ]);
 
-      const ladder = this.ladder();
-      const mother = this.slime(u.mother_id!)!;
-      const pending = u.pending_id ? this.slime(u.pending_id)! : null;
+      const ladder = await this.ladder(s);
+      const avg = this.avgWeight(ladder);
+      const mother = (await this.slime(s, u.mother_id!))!;
+      const pending = u.pending_id ? (await this.slime(s, u.pending_id))! : null;
       return {
         ok: true as const,
         token,
         registered,
         phase: pending ? ('fight' as const) : ('mate' as const),
-        mother: this.view(mother, ladder),
-        mates: this.mates(ladder),
-        pending: pending ? this.view(pending, ladder) : null,
+        mother: this.view(mother, ladder, avg),
+        mates: await this.mates(s, ladder),
+        pending: pending ? this.view(pending, ladder, avg) : null,
       };
     });
   }
 
   /** Slimes on the ladder with seeds left, plus Hall of Fame legends whose lineage has died out of the ranking. */
-  private mates(ladder: SlimeRow[]): MateCandidate[] {
+  private async mates(s: Store, ladder: SlimeRow[]): Promise<MateCandidate[]> {
     const list: MateCandidate[] = ladder
       .map((r, i) => ({ r, rank: i + 1 }))
       .filter(({ r }) => r.seeds > 0)
       .map(({ r, rank }) => ({ id: r.id, rank, name: r.name, gen: r.gen, from: 'rank' as const }));
     const alive = new Set(ladder.map((r) => father(r).no));
-    const legends = this.db.prepare('SELECT * FROM slimes WHERE hall = 1 ORDER BY id DESC').all() as unknown as SlimeRow[];
+    const legends = await s.all<SlimeRow>('SELECT * FROM slimes WHERE hall = 1 ORDER BY id DESC');
     for (const r of legends) if (!r.ranked && !alive.has(father(r).no)) list.push({ id: r.id, rank: 0, name: r.name, gen: r.gen, from: 'hall' });
     return list;
   }
 
-  private createFounder(owner: string): number {
-    const res = this.db
-      .prepare('INSERT INTO slimes (owner, name, gen, dna, stats, color, kind, blood, born, seeds, points) VALUES (?,?,?,?,?,?,?,?,?,?,1)')
-      .run(owner, 'FirstChild', 0, JSON.stringify(eveDna()), JSON.stringify(EVE_STATS), '#7f7f7f', 'normal', JSON.stringify(zeroBlood()), this.now(), 5);
-    return Number(res.lastInsertRowid);
+  private async createFounder(s: Store, owner: string): Promise<number> {
+    const res = await s.run(
+      'INSERT INTO slimes (owner, name, gen, dna, stats, color, kind, blood, born, seeds, points) VALUES (?,?,?,?,?,?,?,?,?,?,1)',
+      [owner, 'FirstChild', 0, JSON.stringify(eveDna()), JSON.stringify(EVE_STATS), '#7f7f7f', 'normal', JSON.stringify(zeroBlood()), this.now(), 5],
+    );
+    return res.lastInsertRowid;
   }
 
   /** `sel` is a slime id, or 'no' for an unknown seed (which founds a new lineage). */
-  mate(token: string, sel: number | 'no'): MateResponse {
-    return this.tx(() => {
-      const u = this.userByToken(token);
+  async mate(token: string, sel: number | 'no'): Promise<MateResponse> {
+    return this.db.tx(async (s) => {
+      const u = await this.userByToken(s, token);
       if (u.pending_id) throw new GameError('pending');
-      const mother = this.slime(u.mother_id!)!;
-      const ladder = this.ladder();
+      const mother = (await this.slime(s, u.mother_id!))!;
+      const ladder = await this.ladder(s);
       const avg = this.avgWeight(ladder);
       let mate: SlimeRow | undefined;
       let spendsSeed = false;
       if (sel !== 'no') {
-        mate = this.slime(Number(sel));
+        mate = await this.slime(s, Number(sel));
         if (!mate) throw new GameError('not-ranked');
         if (mate.ranked) {
           if (mate.seeds <= 0) throw new GameError('no-seeds');
@@ -348,7 +364,7 @@ export class Game {
         }
       }
 
-      const newNo = this.nextSlimeId();
+      const newNo = await this.nextSlimeId(s);
       const c = this.makeChild(
         JSON.parse(mother.dna) as Dna,
         mate ? { dna: JSON.parse(mate.dna) as Dna, weight: statsOf(mate).weight } : null,
@@ -358,27 +374,24 @@ export class Game {
         newNo,
       );
 
-      const ped: Pedigree = { id: 0, name: 'NoNameYet', gen: mother.gen + 1 };
+      const ped: Pedigree = { id: newNo, name: 'NoNameYet', gen: mother.gen + 1 };
       const a = Game.trim(Game.pedOf(mother), 2);
       const b = mate ? Game.trim(Game.pedOf(mate), 2) : ({ id: 0, name: '', gen: 0, unknown: true } as Pedigree);
       if (a) ped.a = a;
       if (b) ped.b = b;
 
-      const res = this.db
-        .prepare(
-          'INSERT INTO slimes (owner, name, gen, dna, stats, color, kind, blood, nix, born, seeds, points, ped) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)',
-        )
-        .run(u.name, 'NoNameYet', mother.gen + 1, JSON.stringify(c.dna), JSON.stringify(c.stats), c.color, c.kind, JSON.stringify(c.blood), c.nix, this.now(), Math.trunc(c.stats.sex / 10), null);
-      const id = Number(res.lastInsertRowid);
-      ped.id = id;
-      this.db.prepare('UPDATE slimes SET ped = ? WHERE id = ?').run(JSON.stringify(ped), id);
+      const res = await s.run(
+        'INSERT INTO slimes (owner, name, gen, dna, stats, color, kind, blood, nix, born, seeds, points, ped) VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)',
+        [u.name, 'NoNameYet', mother.gen + 1, JSON.stringify(c.dna), JSON.stringify(c.stats), c.color, c.kind, JSON.stringify(c.blood), c.nix, this.now(), Math.trunc(c.stats.sex / 10), JSON.stringify(ped)],
+      );
+      const id = res.lastInsertRowid;
 
       // the chosen seed is spent; then every ranked slime's seed gauge advances by its SEX
       if (mate && spendsSeed) {
         mate.seeds -= 1;
         mate.children += 1;
       }
-      const save = this.db.prepare('UPDATE slimes SET seeds = ?, children = ?, sperm = ? WHERE id = ?');
+      const stmts: Stmt[] = [];
       for (const r of ladder) {
         const row = mate && r.id === mate.id ? mate : r;
         row.sperm += statsOf(row).sex;
@@ -386,31 +399,32 @@ export class Game {
           row.sperm -= SEED_GAGE;
           row.seeds += 1;
         }
-        save.run(row.seeds, row.children, row.sperm, row.id);
+        stmts.push({ sql: 'UPDATE slimes SET seeds = ?, children = ?, sperm = ? WHERE id = ?', args: [row.seeds, row.children, row.sperm, row.id] });
       }
-      this.db.prepare('UPDATE users SET pending_id = ? WHERE name = ?').run(id, u.name);
-      return { ok: true as const, child: this.view(this.slime(id)!) };
+      stmts.push({ sql: 'UPDATE users SET pending_id = ? WHERE name = ?', args: [id, u.name] });
+      await s.batch(stmts);
+      return { ok: true as const, child: this.view((await this.slime(s, id))!, ladder, avg) };
     });
   }
 
-  fight(token: string, nameRaw: string): FightResponse {
-    return this.tx(() => {
-      const u = this.userByToken(token);
+  async fight(token: string, nameRaw: string): Promise<FightResponse> {
+    return this.db.tx(async (s) => {
+      const u = await this.userByToken(s, token);
       if (!u.pending_id) throw new GameError('no-newborn');
       const name = [...nameRaw.trim()].slice(0, MAX_SLIME_NAME).join('') || 'NoNameYet';
-      const child = this.slime(u.pending_id)!;
+      const child = (await this.slime(s, u.pending_id))!;
       const ped = JSON.parse(child.ped!) as Pedigree;
       ped.name = name;
-      this.db.prepare('UPDATE slimes SET name = ?, ped = ? WHERE id = ?').run(name, JSON.stringify(ped), child.id);
+      const pre: Stmt[] = [{ sql: 'UPDATE slimes SET name = ?, ped = ? WHERE id = ?', args: [name, JSON.stringify(ped), child.id] }];
       child.name = name;
       // a newborn from an unknown seed names its new lineage after itself
       const blood = bloodOf(child);
       if (blood[3].no !== 0 && !blood[3].name) {
         blood[3].name = name;
-        this.registerLineage(blood[3]);
+        pre.push(this.lineageStmt(blood[3]));
       }
 
-      const ladder = this.ladder();
+      const ladder = await this.ladder(s);
       const avg = this.avgWeight(ladder);
       // totals are divided down when the lowest ranked slime's points reach three digits
       const cut = cutLength(ladder.at(-1)?.points ?? 1);
@@ -419,6 +433,9 @@ export class Game {
       const champ = ladder[0] ?? null;
       const myStats = statsOf(child);
       const steps: FightStep[] = [];
+      const logs: TitleMatchLog[] = [];
+      const log = (challenger: SlimeView, champion: SlimeView, report: BattleReport, held: boolean) =>
+        logs.push({ at: new Date(this.now()).toISOString(), challenger, champion, report, championHeld: held });
       let points = 1;
       let lost = false;
 
@@ -428,7 +445,7 @@ export class Game {
         const given = won ? 0 : points;
         const gained = won ? opp.points : 0; // a victor takes over the beaten slime's points
         steps.push({ opponent: this.view(opp, ladder, avg), report: rep, won, title, gained, given, total: points + gained });
-        if (title) this.logTitleMatch(this.view(child, ladder, avg), this.view(opp, ladder, avg), rep, !won);
+        if (title) log(this.view(child, ladder, avg), this.view(opp, ladder, avg), rep, !won);
         if (won) {
           points += gained;
           child.wins++;
@@ -454,11 +471,11 @@ export class Game {
           // beaten the whole ladder: a new branch lineage is born, named after the new champion
           const old = blood[3];
           const next: Lin = { no: child.id, name, nx: branchNx(old.nx, this.rng) };
-          this.registerLineage(next, [...this.lineageOld(old.no), old]);
+          pre.push(this.lineageStmt(next, [...(await this.lineageOld(s, old.no)), old]));
           blood[3] = next;
         }
       }
-      this.db.prepare('UPDATE slimes SET blood = ? WHERE id = ?').run(JSON.stringify(blood), child.id);
+      pre.push({ sql: 'UPDATE slimes SET blood = ? WHERE id = ?', args: [JSON.stringify(blood), child.id] });
       child.blood = JSON.stringify(blood);
 
       // everyone but the champion, sorted by points; ties keep the original's odd order (newcomer first, lowest rank next)
@@ -469,6 +486,7 @@ export class Game {
 
       let order: SlimeRow[];
       let defense: DefenseMatch | null = null;
+      const post: Stmt[] = [];
       if (!champ) {
         order = rest; // empty ladder: the newcomer simply is the champion
       } else if (champ.points < ranger.points) {
@@ -478,7 +496,7 @@ export class Game {
           const rep = fight(ranger.name, statsOf(ranger), champ.name, statsOf(champ), this.rng);
           const rangerWon = rep.winner === 'a';
           defense = { challenger: this.view(ranger, ladder, avg), champion: this.view(champ, ladder, avg), report: rep, championHeld: !rangerWon };
-          this.logTitleMatch(defense.challenger, defense.champion, rep, !rangerWon);
+          log(defense.challenger, defense.champion, rep, !rangerWon);
           if (rangerWon) {
             ranger.points += champ.points;
             ranger.wins++;
@@ -493,7 +511,7 @@ export class Game {
         }
         const others = rest.filter((r) => r !== ranger);
         if (dethroned) {
-          if (champ.defenses >= HALL_MIN_DEFENSES) this.enterHall(champ, ladder, avg);
+          if (champ.defenses >= HALL_MIN_DEFENSES) post.push(...(await this.hallStmts(s, champ, this.view(champ, ladder, avg))));
           champ.defenses = 0;
           order = [ranger, champ, ...others];
         } else {
@@ -503,86 +521,79 @@ export class Game {
         order = [champ, ...rest];
       }
 
-      const save = this.db.prepare(
-        'UPDATE slimes SET wins=?, losses=?, streak=?, points=?, defenses=?, champ=?, ranked=?, best_rank=?, seeds=? WHERE id=?',
-      );
       child.seeds = Math.trunc(myStats.sex / 10);
-      order.forEach((r, i) => {
+      const saves: Stmt[] = order.map((r, i) => {
         const rank = i + 1;
         r.ranked = rank <= RANK_SIZE ? 1 : 0;
         r.champ = i === 0 ? 1 : 0;
         if (r.ranked) r.best_rank = r.best_rank ? Math.min(r.best_rank, rank) : rank;
-        save.run(r.wins, r.losses, r.streak, r.points, r.defenses, r.champ, r.ranked, r.best_rank, r.seeds, r.id);
+        return {
+          sql: 'UPDATE slimes SET wins=?, losses=?, streak=?, points=?, defenses=?, champ=?, ranked=?, best_rank=?, seeds=? WHERE id=?',
+          args: [r.wins, r.losses, r.streak, r.points, r.defenses, r.champ, r.ranked, r.best_rank, r.seeds, r.id],
+        };
       });
+      const tm: Stmt[] = logs.map((l) => ({ sql: 'INSERT INTO title_matches (at, data) VALUES (?,?)', args: [this.now(), JSON.stringify(l)] }));
+      if (tm.length) tm.push({ sql: 'DELETE FROM title_matches WHERE id <= (SELECT MAX(id) FROM title_matches) - 30' });
+      await s.batch([
+        ...pre,
+        ...saves,
+        ...post,
+        ...tm,
+        { sql: 'UPDATE users SET mother_id = ?, pending_id = NULL, last_play = ?, last_seen = ? WHERE name = ?', args: [child.id, this.now(), this.now(), u.name] },
+      ]);
 
-      this.db.prepare('UPDATE users SET mother_id = ?, pending_id = NULL, last_play = ?, last_seen = ? WHERE name = ?').run(
-        child.id,
-        this.now(),
-        this.now(),
-        u.name,
-      );
-
-      const after = this.ladder();
-      const final = this.slime(child.id)!;
-      const fv = this.view(final, after);
+      const after = await this.ladder(s);
+      const final = (await this.slime(s, child.id))!;
+      const fv = this.view(final, after, this.avgWeight(after));
       return { ok: true as const, slime: fv, steps, defense, finalPoints: points, finalRank: fv.rank };
     });
   }
 
   /** Legends stay in the database (and can be mated with once their lineage has left the ranking). */
-  private enterHall(champ: SlimeRow, ladder: SlimeRow[], avg: number) {
-    const snap = JSON.stringify(this.view(champ, ladder, avg));
-    const have = this.db.prepare('SELECT id FROM hall WHERE slime_id = ?').get(champ.id) as { id: number } | undefined;
-    if (have) this.db.prepare('UPDATE hall SET at = ?, defenses = ?, snapshot = ? WHERE id = ?').run(this.now(), champ.defenses, snap, have.id);
-    else this.db.prepare('INSERT INTO hall (at, defenses, slime_id, snapshot) VALUES (?,?,?,?)').run(this.now(), champ.defenses, champ.id, snap);
-    this.db.prepare('UPDATE slimes SET hall = 1 WHERE id = ?').run(champ.id);
-    // a congratulation on the title screen; the client renders '@hall' notes in the viewer's language
-    this.db.prepare('INSERT INTO comments (at, user, text) VALUES (?,?,?)').run(this.now(), '@hall', `${champ.name}|${champ.gen}|${champ.owner}`);
-  }
-
-  private logTitleMatch(challenger: SlimeView, champion: SlimeView, report: BattleReport, championHeld: boolean) {
-    const data: TitleMatchLog = { at: new Date(this.now()).toISOString(), challenger, champion, report, championHeld };
-    this.db.prepare('INSERT INTO title_matches (at, data) VALUES (?,?)').run(this.now(), JSON.stringify(data));
-    this.db.prepare('DELETE FROM title_matches WHERE id <= (SELECT MAX(id) FROM title_matches) - 30').run();
+  private async hallStmts(s: Store, champ: SlimeRow, snapshot: SlimeView): Promise<Stmt[]> {
+    const snap = JSON.stringify(snapshot);
+    const have = await s.get<{ id: number }>('SELECT id FROM hall WHERE slime_id = ?', [champ.id]);
+    return [
+      have
+        ? { sql: 'UPDATE hall SET at = ?, defenses = ?, snapshot = ? WHERE id = ?', args: [this.now(), champ.defenses, snap, have.id] }
+        : { sql: 'INSERT INTO hall (at, defenses, slime_id, snapshot) VALUES (?,?,?,?)', args: [this.now(), champ.defenses, champ.id, snap] },
+      { sql: 'UPDATE slimes SET hall = 1 WHERE id = ?', args: [champ.id] },
+      // a congratulation on the title screen; the client renders '@hall' notes in the viewer's language
+      { sql: 'INSERT INTO comments (at, user, text) VALUES (?,?,?)', args: [this.now(), '@hall', `${champ.name}|${champ.gen}|${champ.owner}`] },
+    ];
   }
 
   // ---------- read models ----------
 
-  ranking(): SlimeView[] {
-    const ladder = this.ladder();
+  async ranking(): Promise<SlimeView[]> {
+    const ladder = await this.ladder(this.db);
     const avg = this.avgWeight(ladder);
     return ladder.map((r) => this.view(r, ladder, avg));
   }
 
-  hall(): HallEntry[] {
-    const rows = this.db.prepare('SELECT at, defenses, snapshot FROM hall ORDER BY id DESC LIMIT 100').all() as unknown as {
-      at: number;
-      defenses: number;
-      snapshot: string;
-    }[];
-    return rows.map((r) => ({
-      at: new Date(r.at).toISOString(),
-      defenses: r.defenses,
-      slime: JSON.parse(r.snapshot) as SlimeView,
-    }));
+  async hall(): Promise<HallEntry[]> {
+    const rows = await this.db.all<{ at: number; defenses: number; snapshot: string }>('SELECT at, defenses, snapshot FROM hall ORDER BY id DESC LIMIT 100');
+    return rows.map((r) => ({ at: new Date(r.at).toISOString(), defenses: r.defenses, slime: JSON.parse(r.snapshot) as SlimeView }));
   }
 
-  titleMatches(): TitleMatchLog[] {
-    const rows = this.db.prepare('SELECT data FROM title_matches ORDER BY id DESC LIMIT 30').all() as unknown as { data: string }[];
+  async titleMatches(): Promise<TitleMatchLog[]> {
+    const rows = await this.db.all<{ data: string }>('SELECT data FROM title_matches ORDER BY id DESC LIMIT 30');
     return rows.map((r) => JSON.parse(r.data) as TitleMatchLog);
   }
 
   /** Lineage census: ranked slimes per lineage (own line = slot 3), with their branch ancestry. */
-  lineages(): LineageRow[] {
-    const ladder = this.ladder();
+  async lineages(): Promise<LineageRow[]> {
+    const ladder = await this.ladder(this.db);
     const count = new Map<number, number>();
     for (const r of ladder) {
       const l = father(r);
       if (l.no !== 0) count.set(l.no, (count.get(l.no) ?? 0) + 1);
     }
+    const regs = await this.db.all<{ no: number; name: string; nx: string; old: string }>('SELECT no, name, nx, old FROM lineages');
+    const byNo = new Map(regs.map((r) => [r.no, r]));
     const rows: LineageRow[] = [];
     for (const [no, cnt] of [...count.entries()].sort((a, b) => b[1] - a[1])) {
-      const reg = this.db.prepare('SELECT name, nx FROM lineages WHERE no = ?').get(no) as { name: string; nx: string } | undefined;
+      const reg = byNo.get(no);
       if (!reg) continue;
       rows.push({
         rank: 0,
@@ -591,7 +602,7 @@ export class Game {
         type: Number(reg.nx[6] ?? 0),
         count: cnt,
         percent: Math.trunc((cnt / (ladder.length || 1)) * 100),
-        chain: [...this.lineageOld(no).map((o) => ({ no: o.no, name: o.name })), { no, name: reg.name }],
+        chain: [...(JSON.parse(reg.old) as Lin[]).map((o) => ({ no: o.no, name: o.name })), { no, name: reg.name }],
       });
     }
     rows.forEach((r, i) => (r.rank = i + 1));
@@ -599,21 +610,21 @@ export class Game {
   }
 
   /** Slimes of one lineage; with a session token, also flags poor matches for that player's slime. */
-  lineage(no: number, token?: string): LineageDetail {
-    const ladder = this.ladder();
+  async lineage(no: number, token?: string): Promise<LineageDetail> {
+    const ladder = await this.ladder(this.db);
     const avg = this.avgWeight(ladder);
     let viewer: Blood | null = null;
     if (token) {
-      const u = this.userByToken(token);
-      viewer = bloodOf(this.slime(u.mother_id!)!);
+      const u = await this.userByToken(this.db, token);
+      viewer = bloodOf((await this.slime(this.db, u.mother_id!))!);
     }
     let rows = ladder.filter((r) => father(r).no === no);
     let fromHall = false;
     if (!rows.length) {
-      rows = (this.db.prepare('SELECT * FROM slimes WHERE hall = 1 ORDER BY id DESC').all() as unknown as SlimeRow[]).filter((r) => father(r).no === no);
+      rows = (await this.db.all<SlimeRow>('SELECT * FROM slimes WHERE hall = 1 ORDER BY id DESC')).filter((r) => father(r).no === no);
       fromHall = rows.length > 0;
     }
-    const reg = this.db.prepare('SELECT name, nx FROM lineages WHERE no = ?').get(no) as { name: string; nx: string } | undefined;
+    const reg = await this.db.get<{ name: string; nx: string }>('SELECT name, nx FROM lineages WHERE no = ?', [no]);
     const slimes = rows.map((r) => {
       const b = bloodOf(r);
       let variety: number | null = null;
@@ -628,49 +639,49 @@ export class Game {
   }
 
   /** "Lineage compatibility list" for the player's slime against every lineage still alive. */
-  nixTable(token: string): NixTable {
-    const u = this.userByToken(token);
-    const mine = bloodOf(this.slime(u.mother_id!)!);
-    const ladder = this.ladder();
+  async nixTable(token: string): Promise<NixTable> {
+    const u = await this.userByToken(this.db, token);
+    const mine = bloodOf((await this.slime(this.db, u.mother_id!))!);
+    const ladder = await this.ladder(this.db);
     const count = new Map<number, number>();
     for (const r of ladder) count.set(father(r).no, (count.get(father(r).no) ?? 0) + 1);
-    for (const r of this.db.prepare('SELECT * FROM slimes WHERE hall = 1').all() as unknown as SlimeRow[]) if (!count.has(father(r).no)) count.set(father(r).no, 0);
+    for (const r of await this.db.all<SlimeRow>('SELECT * FROM slimes WHERE hall = 1')) if (!count.has(father(r).no)) count.set(father(r).no, 0);
+    const regs = await this.db.all<{ no: number; name: string; nx: string }>('SELECT no, name, nx FROM lineages');
+    const byNo = new Map(regs.map((r) => [r.no, r]));
     const rows: NixTable['rows'] = [];
     for (const [no, cnt] of [...count.entries()].sort((a, b) => b[1] - a[1])) {
-      const reg = this.db.prepare('SELECT name, nx FROM lineages WHERE no = ?').get(no) as { name: string; nx: string } | undefined;
+      const reg = byNo.get(no);
       if (!reg || no === 0) continue;
       rows.push({ no, name: reg.name, type: Number(reg.nx[6] ?? 0), count: cnt, print: affinityPrint(mine, { no, name: reg.name, nx: reg.nx }) });
     }
     return { mine, rows };
   }
 
-  comments(): CommentView[] {
-    const rows = this.db.prepare('SELECT at, user, text FROM comments ORDER BY id DESC LIMIT 50').all() as unknown as {
-      at: number;
-      user: string;
-      text: string;
-    }[];
+  async comments(): Promise<CommentView[]> {
+    const rows = await this.db.all<{ at: number; user: string; text: string }>('SELECT at, user, text FROM comments ORDER BY id DESC LIMIT 50');
     return rows.map((r) => ({ at: new Date(r.at).toISOString(), user: r.user, text: r.text }));
   }
 
-  addComment(userRaw: string, textRaw: string) {
+  async addComment(userRaw: string, textRaw: string): Promise<void> {
     const text = [...textRaw.trim()].slice(0, MAX_COMMENT).join('');
     if (!text) throw new GameError('empty-comment');
     // '@' names are reserved for system notes such as the Hall of Fame congratulation
     const user = [...(userRaw.trim().replace(/^@+/, '') || 'Name')].slice(0, MAX_USER).join('');
-    this.db.prepare('INSERT INTO comments (at, user, text) VALUES (?,?,?)').run(this.now(), user, text);
+    await this.db.run('INSERT INTO comments (at, user, text) VALUES (?,?,?)', [this.now(), user, text]);
   }
 
   /** Delete accounts idle for over a week; their slimes stay while ranked or enshrined, the rest go. */
-  purgeInactive(): number {
+  async purgeInactive(): Promise<number> {
     const cutoff = this.now() - this.inactivityMs;
-    return this.tx(() => {
-      const gone = this.db.prepare('SELECT name FROM users WHERE last_seen < ?').all(cutoff) as unknown as { name: string }[];
+    return this.db.tx(async (s) => {
+      const gone = await s.all<{ name: string }>('SELECT name FROM users WHERE last_seen < ?', [cutoff]);
+      const stmts: Stmt[] = [];
       for (const { name } of gone) {
-        this.db.prepare('DELETE FROM slimes WHERE owner = ? AND ranked = 0 AND hall = 0').run(name);
-        this.db.prepare('DELETE FROM sessions WHERE user = ?').run(name);
-        this.db.prepare('DELETE FROM users WHERE name = ?').run(name);
+        stmts.push({ sql: 'DELETE FROM slimes WHERE owner = ? AND ranked = 0 AND hall = 0', args: [name] });
+        stmts.push({ sql: 'DELETE FROM sessions WHERE user = ?', args: [name] });
+        stmts.push({ sql: 'DELETE FROM users WHERE name = ?', args: [name] });
       }
+      await s.batch(stmts);
       return gone.length;
     });
   }

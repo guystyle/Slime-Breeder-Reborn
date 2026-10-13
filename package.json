@@ -7,20 +7,24 @@
   "scripts": {
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/build-api.mjs",
     "start": "tsx src/server/index.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:api": "node scripts/build-api.mjs",
+    "smoke:remote": "tsx scripts/remote-smoke.ts"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=20"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.4",
+    "@libsql/client": "^0.18.0",
     "hono": "^4.13.13"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
