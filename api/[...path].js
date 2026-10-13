@@ -11878,7 +11878,7 @@ function cutLength(lowestPoints) {
 }
 var scalePoints = (points, cut) => Math.trunc(points / 10 ** cut);
 var mustFight = (rank, opponentPoints, challengerPoints) => opponentPoints >= challengerPoints || rank <= ALWAYS_FOUGHT;
-var DEFAULT_COOLDOWN_MIN = 5;
+var DEFAULT_COOLDOWN_MIN = 3;
 
 // src/server/db.ts
 var SCHEMA_VERSION = 3;

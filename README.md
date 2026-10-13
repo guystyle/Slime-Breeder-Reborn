@@ -15,7 +15,7 @@ npm test
 ```
 
 Dev: `npm run dev:server` + `npm run dev:client` (Vite proxies `/api`). All mutant sprites: `/gallery.html`.
-Environment (see `.env.example`): `PORT`, `SLIME_DB` (local db path), `SLIME_COOLDOWN_MIN` (minutes between plays, default 5, `0` for none),
+Environment (see `.env.example`): `PORT`, `SLIME_DB` (local db path), `SLIME_COOLDOWN_MIN` (minutes between plays, default 3, `0` for none),
 `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` (use a remote Turso database instead of the local file).
 A database from an incompatible schema is refused, not misread.
 
@@ -54,7 +54,7 @@ Optional check against a scratch remote database (writes test data!):
   challenger's points. Totals are divided when the lowest rank reaches three digits. If a non-champion
   out-scores the champion a title defense match is played; a champion dethroned after 4+ defenses enters the
   Hall of Fame. Seeds regrow from each slime's fertility (SEX) every time anyone mates.
-- Accounts: name + password (scrypt-hashed), one slime per account, play cooldown (default 5 min, `SLIME_COOLDOWN_MIN`), 7 days idle = deleted.
+- Accounts: name + password (scrypt-hashed), one slime per account, play cooldown (default 3 min, `SLIME_COOLDOWN_MIN`), 7 days idle = deleted.
 
 - **Bloodlines (keito):** four lineage slots per slime, a child always joins its father's lineage. A 7-digit
   code per lineage (six stat affinities + a type) drives the **nicks** boost on a newborn's stats when affinity
