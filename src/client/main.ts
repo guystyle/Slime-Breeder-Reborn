@@ -21,6 +21,15 @@ let bottomOverride: HTMLElement | null = null;
 let lastResults: HTMLElement | null = null;
 let reopenResults = false;
 
+/** Leave the battle screen. A link to "#/" does nothing on its own when the hash is already "#/", so do it by hand then. */
+function goHome() {
+  if (!bottomOverride || routeName() !== '') return; // other routes get there through the hashchange handler
+  bottomOverride = null;
+  applyLayout();
+  void renderBottom();
+  scrollTo(0, 0);
+}
+
 function showResults() {
   if (!lastResults) return;
   if (routeName() === '') {
@@ -113,10 +122,10 @@ function applyLayout() {
 function renderTabbar() {
   const r = routeName();
   const active = bottomOverride ? 'fight' : r === '' ? 'home' : r === 'lineage' ? 'lineages' : ['rank', 'lineages', 'hall'].includes(r) ? r : 'more';
-  const tab = (id: string, href: string, ico: string, label: string) =>
-    h('a', { href, class: active === id ? 'on' : '', onclick: () => { sheet.hidden = true; } }, h('span', { class: 'ico' }, ico), h('span', {}, label));
+  const tab = (id: string, href: string, ico: string, label: string, extra?: () => void) =>
+    h('a', { href, class: active === id ? 'on' : '', onclick: () => { sheet.hidden = true; extra?.(); } }, h('span', { class: 'ico' }, ico), h('span', {}, label));
   tabbar.replaceChildren(
-    tab('home', '#/', '🏠', t('nav.play')),
+    tab('home', '#/', '🏠', t('nav.play'), goHome),
     ...(lastResults ? [h('a', { href: '#', class: active === 'fight' ? 'on' : '', onclick: (e: Event) => { e.preventDefault(); sheet.hidden = true; showResults(); } }, h('span', { class: 'ico' }, '⚔️'), h('span', {}, t('nav.fight')))] : []),
     tab('rank', '#/rank', '🏆', t('nav.rank')),
     tab('lineages', '#/lineages', '🧬', t('nav.lineages')),
@@ -470,7 +479,7 @@ async function playResults(r: Awaited<ReturnType<typeof api.fight>>) {
     'div',
     { class: 'result' },
     h('div', { class: 'shine-gold big2' }, r.finalRank ? t('result.rank', { name: r.slime.name, n: r.finalRank }) : t('result.noRank', { name: r.slime.name })),
-    h('div', { class: 'endlinks' }, h('a', { href: '#/rank', class: 'btnlink' }, t('result.viewRank')), h('a', { href: '#/', class: 'btnlink' }, t('result.home'))),
+    h('div', { class: 'endlinks' }, h('a', { href: '#/rank', class: 'btnlink' }, t('result.viewRank')), h('a', { href: '#/', class: 'btnlink', onclick: goHome }, t('result.home'))),
   );
   results.append(end);
   sparkleAt(end);
