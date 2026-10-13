@@ -28,7 +28,13 @@ root.style.setProperty('--bg-strip', `url(${BG_STRIP})`);
 root.style.setProperty('--bg-strip2', `url(${BG2_STRIP})`);
 
 const showError = (box: HTMLElement, e: unknown) => {
-  box.textContent = e instanceof ApiError ? errorText(e.code, e.params) + (e.code === 'server' && e.detail ? ` [${e.detail}]` : '') : e instanceof Error ? e.message : String(e);
+  box.textContent = e instanceof ApiError ? errorText(e.code, e.params) + (e.code === 'server' && e.detail ? ` [${e.detail}]` : '') : e instanceof Error ? `${e.message} (${e.name}${where(e)})` : String(e);
+};
+
+/** Top stack frame, so a phone user can report where an unexpected script error came from. */
+const where = (e: Error) => {
+  const m = /(?:@|\()?([^@()\s]+:\d+:\d+)\)?\s*$/m.exec((e.stack ?? '').split('\n').find((l) => /:\d+:\d+/.test(l)) ?? '');
+  return m ? ` @ ${m[1]!.split('/').pop()}` : '';
 };
 
 /** Run an async action behind a button, surfacing errors into `box`. */
