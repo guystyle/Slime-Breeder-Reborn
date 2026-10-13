@@ -297,8 +297,9 @@ details.comments > summary { cursor: pointer; color: #cfc; margin: 6px 0; user-s
 
   /* slime cards */
   .slime { flex-direction: row; }
-  .slime .box { min-width: 0; width: 112px; padding: 6px 4px; flex: none; }
-  .slime .info { padding: 4px 6px; }
+  .slime .box { min-width: 0; width: 112px; padding: 10px 4px; flex: none; justify-content: flex-start; gap: 2px; }
+  .slime .info { padding: 5px 6px 8px; overflow-y: hidden; }
+  .nixfit { padding-bottom: 2px; overflow-wrap: anywhere; letter-spacing: 1px; }
   .statgrid { grid-template-columns: repeat(3, 1fr); }
   .statgrid .cell { border-top: 1px solid #889; }
   .statgrid .cell:nth-child(-n+3) { border-top: 0; }

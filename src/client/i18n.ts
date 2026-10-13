@@ -6,6 +6,7 @@ const ko = {
   // navigation
   'nav.home': '홈',
   'nav.guide': '설명서',
+  'nav.fight': '전투 결과',
   'nav.rank': '랭킹',
   'nav.lineages': '계통 일람',
   'nav.hall': '전당',
@@ -177,6 +178,7 @@ type Key = keyof typeof ko;
 const en: Record<Key, string> = {
   'nav.home': 'Home',
   'nav.guide': 'Instructions',
+  'nav.fight': 'Battle',
   'nav.rank': 'Ranking',
   'nav.lineages': 'Lineages',
   'nav.hall': 'Hall of Fame',

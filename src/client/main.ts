@@ -16,6 +16,21 @@ type Session = Extract<EnterResponse, { ok: true }>;
 let session: Session | null = null;
 /** Content that replaces the routed bottom view (a fight in progress or its result) until the route changes. */
 let bottomOverride: HTMLElement | null = null;
+/** The latest battle replay, kept so the player can come back to it after browsing other pages. */
+let lastResults: HTMLElement | null = null;
+let reopenResults = false;
+
+function showResults() {
+  if (!lastResults) return;
+  if (routeName() === '') {
+    bottomOverride = lastResults;
+    applyLayout();
+    void renderBottom();
+  } else {
+    reopenResults = true; // the hashchange handler restores the replay
+    location.hash = '#/';
+  }
+}
 let banner = '';
 /** The remembered account on this device (from the HttpOnly cookie) and when its next play is allowed. */
 let identity: string | null = null;
@@ -94,11 +109,12 @@ function applyLayout() {
 
 function renderTabbar() {
   const r = routeName();
-  const active = bottomOverride ? 'rank' : r === '' ? 'home' : r === 'lineage' ? 'lineages' : ['rank', 'lineages', 'hall'].includes(r) ? r : 'more';
+  const active = bottomOverride ? 'fight' : r === '' ? 'home' : r === 'lineage' ? 'lineages' : ['rank', 'lineages', 'hall'].includes(r) ? r : 'more';
   const tab = (id: string, href: string, ico: string, label: string) =>
     h('a', { href, class: active === id ? 'on' : '', onclick: () => { sheet.hidden = true; } }, h('span', { class: 'ico' }, ico), h('span', {}, label));
   tabbar.replaceChildren(
     tab('home', '#/', '🏠', t('nav.play')),
+    ...(lastResults ? [h('a', { href: '#', class: active === 'fight' ? 'on' : '', onclick: (e: Event) => { e.preventDefault(); sheet.hidden = true; showResults(); } }, h('span', { class: 'ico' }, '⚔️'), h('span', {}, t('nav.fight')))] : []),
     tab('rank', '#/rank', '🏆', t('nav.rank')),
     tab('lineages', '#/lineages', '🧬', t('nav.lineages')),
     tab('hall', '#/hall', '👑', t('nav.hall')),
@@ -129,9 +145,11 @@ function nav(): HTMLElement {
       session = null;
       banner = '';
       bottomOverride = null;
+      lastResults = null;
       renderAll();
     }),
     sep(),
+    ...(lastResults ? [h('a', { href: '#', onclick: (e: Event) => { e.preventDefault(); showResults(); } }, t('nav.fight')), sep()] : []),
     link('#/guide', t('nav.guide')),
     sep(),
     link('#/rank', t('nav.rank')),
@@ -396,6 +414,7 @@ function fightTop(s: Session): HTMLElement {
 async function playResults(r: Awaited<ReturnType<typeof api.fight>>) {
   const results = h('div', { class: 'results' });
   bottomOverride = results;
+  lastResults = results;
   bottom.replaceChildren(results);
   applyLayout();
   scrollTo(0, 0);
@@ -499,7 +518,8 @@ function renderAll() {
 }
 
 window.addEventListener('hashchange', () => {
-  bottomOverride = null;
+  bottomOverride = reopenResults ? lastResults : null;
+  reopenResults = false;
   sheet.hidden = true;
   applyLayout();
   scrollTo(0, 0);
