@@ -14,7 +14,9 @@ interface Side {
 }
 
 function side(s: Pick<SlimeView, 'name' | 'color' | 'kind' | 'px'>, maxHp: number, flip: boolean): Side {
-  const size = Math.min(200, Math.round(s.px * 1.5));
+  // two fighters must fit side by side: cap the size by the viewport width
+  const cap = Math.max(72, Math.min(200, Math.floor((innerWidth - 90) / 2.4)));
+  const size = Math.min(cap, Math.round(s.px * 1.5));
   const hp = h('div', { class: 'bar-fill hp' });
   const stm = h('div', { class: 'bar-fill stm' });
   const hpText = h('span', { class: 'bar-text' }, `${maxHp}`);

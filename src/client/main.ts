@@ -8,7 +8,7 @@ import { guideView } from './guide.ts';
 import { errorText, getLang, setLang, t } from './i18n.ts';
 import { hallView, lineageView, lineagesView, rankView, titlesView } from './lists.ts';
 import { BG2_STRIP, BG_STRIP } from './sprites.gen.ts';
-import { battleReport, fmtDate, roundDetails, slimeCard } from './views.ts';
+import { battleReport, fmtDate, isMobile, mobileQuery, roundDetails, slimeCard } from './views.ts';
 
 type Session = Extract<EnterResponse, { ok: true }>;
 
@@ -48,7 +48,10 @@ const errorBox = () => h('div', { class: 'error', role: 'alert' });
 const top = h('div', { id: 'frame-top' });
 const divider = h('div', { id: 'divider', role: 'separator', 'aria-orientation': 'horizontal', title: '↕' });
 const bottom = h('div', { id: 'frame-bottom' });
+const tabbar = h('nav', { id: 'tabbar', 'aria-label': 'main' });
+const sheet = h('div', { id: 'more-sheet', hidden: true });
 app.append(top, divider, bottom);
+document.body.append(tabbar, sheet);
 
 divider.addEventListener('pointerdown', (e) => {
   divider.setPointerCapture(e.pointerId);
@@ -58,6 +61,51 @@ divider.addEventListener('pointerdown', (e) => {
   };
   divider.addEventListener('pointermove', move);
   divider.addEventListener('pointerup', () => divider.removeEventListener('pointermove', move), { once: true });
+});
+
+const routeName = () => location.hash.replace(/^#\/?/, '').split('/')[0] ?? '';
+
+/**
+ * Desktop shows both frames. On a phone there is one column and one view at a time: the
+ * play screen (home) or the routed page, switched with the bottom tab bar.
+ */
+function applyLayout() {
+  const mobile = isMobile();
+  document.body.classList.toggle('mobile', mobile);
+  const home = routeName() === '' && !bottomOverride;
+  top.hidden = mobile && !home;
+  bottom.hidden = mobile && home;
+  divider.hidden = mobile;
+  tabbar.hidden = !mobile;
+  if (!mobile) sheet.hidden = true;
+  if (mobile) renderTabbar();
+}
+
+function renderTabbar() {
+  const r = routeName();
+  const active = bottomOverride ? 'rank' : r === '' ? 'home' : r === 'lineage' ? 'lineages' : ['rank', 'lineages', 'hall'].includes(r) ? r : 'more';
+  const tab = (id: string, href: string, ico: string, label: string) =>
+    h('a', { href, class: active === id ? 'on' : '', onclick: () => { sheet.hidden = true; } }, h('span', { class: 'ico' }, ico), h('span', {}, label));
+  tabbar.replaceChildren(
+    tab('home', '#/', '🏠', t('nav.play')),
+    tab('rank', '#/rank', '🏆', t('nav.rank')),
+    tab('lineages', '#/lineages', '🧬', t('nav.lineages')),
+    tab('hall', '#/hall', '👑', t('nav.hall')),
+    h('a', { href: '#', class: active === 'more' || !sheet.hidden ? 'on' : '', onclick: (e: Event) => { e.preventDefault(); sheet.hidden = !sheet.hidden; renderSheet(); } }, h('span', { class: 'ico' }, '⋯'), h('span', {}, t('nav.more'))),
+  );
+}
+
+function renderSheet() {
+  const item = (label: string, onclick: () => void, href = '#') => h('a', { href, class: 'sheet-item', onclick: (e: Event) => { if (href === '#') e.preventDefault(); onclick(); } }, label);
+  sheet.replaceChildren(
+    item(t('nav.guide'), () => { sheet.hidden = true; }, '#/guide'),
+    item(t('nav.titles'), () => { sheet.hidden = true; }, '#/titles'),
+    item(t('nav.lang'), () => { setLang(getLang() === 'ko' ? 'en' : 'ko'); sheet.hidden = true; renderAll(); }),
+    item(fxEnabled() ? t('nav.fx.off') : t('nav.fx.on'), () => { setFx(!fxEnabled()); sheet.hidden = true; renderTabbar(); }),
+  );
+}
+document.addEventListener('pointerdown', (e) => {
+  if (!sheet.hidden && !(e.target as Element).closest('#more-sheet, #tabbar')) sheet.hidden = true;
 });
 
 function nav(): HTMLElement {
@@ -134,12 +182,14 @@ async function ticker(): Promise<HTMLElement> {
   return box;
 }
 
+const field = (label: string, input: HTMLElement) => h('label', { class: 'field' }, h('span', {}, label), input);
+
 async function titleTop(): Promise<HTMLElement> {
-  const user = h('input', { type: 'text', size: 16, maxlength: 32, autocomplete: 'username' });
-  const pass = h('input', { type: 'password', size: 8, maxlength: 8, autocomplete: 'current-password' });
+  const user = h('input', { type: 'text', size: 16, maxlength: 32, autocomplete: 'username', autocapitalize: 'none', enterkeyhint: 'next' });
+  const pass = h('input', { type: 'password', size: 8, maxlength: 8, autocomplete: 'current-password', enterkeyhint: 'go' });
   const err = errorBox();
   const btn = h('button', { type: 'submit' }, t('login.enter'));
-  const form = h('form', {}, `${t('login.user')} `, user, ` ${t('login.pass')} `, pass, ' ', btn);
+  const form = h('form', { class: 'login' }, field(t('login.user'), user), field(t('login.pass'), pass), btn);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     void guarded(btn, err, async () => {
@@ -154,14 +204,13 @@ async function titleTop(): Promise<HTMLElement> {
   const cBtn = h('button', { type: 'submit' }, t('comment.say'));
   const cErr = errorBox();
   const list = h('div');
-  const cForm = h('form', {}, `${t('comment.label')} `, cName, ' ', cText, ' ', cBtn, ' ', h('small', {}, t('comment.limit')));
+  const summary = h('summary', {}, t('comment.title', { n: 0 }));
+  const cForm = h('form', { class: 'commentform' }, field(t('comment.name'), cName), field(t('comment.label'), cText), cBtn, h('small', {}, t('comment.limit')));
   const loadComments = async () => {
     const { comments } = await api.comments();
-    list.replaceChildren(
-      ...comments
-        .filter((c) => c.user !== '@hall')
-        .map((c) => h('div', { class: 'comment' }, span('date', fmtDate(c.at)), ' ', span('cyan', c.user), h('b', {}, `(${c.text})`))),
-    );
+    const shown = comments.filter((c) => c.user !== '@hall');
+    summary.textContent = t('comment.title', { n: shown.length });
+    list.replaceChildren(...shown.map((c) => h('div', { class: 'comment' }, span('date', fmtDate(c.at)), ' ', span('cyan', c.user), h('b', {}, `(${c.text})`))));
   };
   cForm.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -173,16 +222,9 @@ async function titleTop(): Promise<HTMLElement> {
     })();
   });
 
-  const stage = h(
-    'div',
-    { class: 'stage' },
-    logo(),
-    form,
-    err,
-    banner ? h('div', { class: 'banner' }, banner) : '',
-    h('small', {}, t('login.note')),
-  );
-  const out = h('div', {}, await ticker(), stage, h('hr'), cForm, cErr, h('hr'), list);
+  const stage = h('div', { class: 'stage' }, logo(), form, err, banner ? h('div', { class: 'banner' }, banner) : '', h('small', {}, t('login.note')));
+  const comments = h('details', { class: 'comments', ...(isMobile() ? {} : { open: true }) }, summary, cForm, cErr, list);
+  const out = h('div', {}, await ticker(), stage, comments);
   void loadComments().catch(() => undefined);
   return out;
 }
@@ -199,12 +241,7 @@ function mateTop(s: Session): HTMLElement {
     'form',
     { class: 'rel' },
     h('div', { class: 'msg' }, t('mate.welcome', { user: s.mother.owner, name: s.mother.name }), s.registered ? ` ${t('mate.newAccount')}` : ''),
-    h('b', { class: 'pink' }, s.mother.name),
-    h('span', { class: 'sub' }, String(s.mother.gen)),
-    ' × ',
-    sel,
-    ' ',
-    btn,
+    h('div', { class: 'row' }, h('span', { class: 'who' }, h('b', { class: 'pink' }, s.mother.name), h('span', { class: 'sub' }, String(s.mother.gen)), ' ×'), sel, btn),
     err,
   );
   form.addEventListener('submit', (e) => {
@@ -239,7 +276,7 @@ function mateTop(s: Session): HTMLElement {
     })
     .catch(() => undefined);
 
-  return h('div', {}, form, slimeCard(s.mother), h('div', { class: 'nixbar' }, nixSel, ' ', show, h('br'), h('small', {}, t('mate.nixHelp'))));
+  return h('div', {}, form, slimeCard(s.mother), h('div', { class: 'nixbar' }, h('div', { class: 'row' }, nixSel, show), h('small', {}, t('mate.nixHelp'))));
 }
 
 function fightTop(s: Session): HTMLElement {
@@ -251,11 +288,7 @@ function fightTop(s: Session): HTMLElement {
     'form',
     {},
     h('div', { class: 'msg' }, t('born.msg', { name: s.mother.name })),
-    t('born.name'),
-    ' ',
-    name,
-    ' ',
-    btn,
+    h('div', { class: 'row' }, h('span', { class: 'who' }, t('born.name')), name, btn),
     err,
     slimeCard(child, { showNix: true }),
     h('div', { class: 'small' }, t('born.no', { n: child.id })),
@@ -266,7 +299,6 @@ function fightTop(s: Session): HTMLElement {
       const token = s.token;
       const r = await api.fight(token, name.value);
       // the form stays up as the "born" card; results play in the bottom frame
-      top.replaceChildren(nav(), h('div', {}, h('div', { class: 'pop' }, slimeCard(child))));
       session = null;
       banner = t('result.again', { n: 15 });
       await playResults(r);
@@ -283,6 +315,8 @@ async function playResults(r: Awaited<ReturnType<typeof api.fight>>) {
   const results = h('div', { class: 'results' });
   bottomOverride = results;
   bottom.replaceChildren(results);
+  applyLayout();
+  scrollTo(0, 0);
   let skipAll = false;
   let current: ReturnType<typeof arena> | null = null;
   const skipBtn = h('button', { type: 'button' }, t('battle.skipAll'));
@@ -300,7 +334,7 @@ async function playResults(r: Awaited<ReturnType<typeof api.fight>>) {
     round.append(current.el);
     await current.play();
     round.append(roundDetails(st, r.finalPoints));
-    round.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (!isMobile()) round.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
   if (r.defense) {
     const d = r.defense;
@@ -317,7 +351,7 @@ async function playResults(r: Awaited<ReturnType<typeof api.fight>>) {
     'div',
     { class: 'result' },
     h('div', { class: 'shine-gold big2' }, r.finalRank ? t('result.rank', { name: r.slime.name, n: r.finalRank }) : t('result.noRank', { name: r.slime.name })),
-    h('a', { href: '#/rank' }, t('result.viewRank')),
+    h('div', { class: 'endlinks' }, h('a', { href: '#/rank', class: 'btnlink' }, t('result.viewRank')), h('a', { href: '#/', class: 'btnlink' }, t('result.home'))),
   );
   results.append(end);
   sparkleAt(end);
@@ -358,6 +392,7 @@ async function renderBottom() {
     if (seq !== bottomSeq) return;
     bottom.replaceChildren(el, h('hr'), COPYRIGHT());
     bottom.scrollTop = 0;
+    if (isMobile()) scrollTo(0, 0);
     if (/^#\/rank\/\d+/.test(location.hash)) {
       const id = location.hash.split('/')[2];
       document.getElementById(`s${id}`)?.scrollIntoView({ block: 'start' });
@@ -372,18 +407,23 @@ async function renderBottom() {
 
 async function renderTop() {
   const body = session ? (session.phase === 'fight' && session.pending ? fightTop(session) : mateTop(session)) : await titleTop();
-  top.replaceChildren(nav(), body);
+  top.replaceChildren(...(isMobile() ? [body] : [nav(), body]));
 }
 
 function renderAll() {
+  applyLayout();
   void renderTop();
   void renderBottom();
 }
 
 window.addEventListener('hashchange', () => {
   bottomOverride = null;
+  sheet.hidden = true;
+  applyLayout();
+  scrollTo(0, 0);
   void renderBottom();
 });
+mobileQuery().addEventListener('change', renderAll);
 
 document.documentElement.lang = getLang();
 startAmbient();

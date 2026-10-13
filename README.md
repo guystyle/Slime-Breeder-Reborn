@@ -72,6 +72,10 @@ wavy rainbow logo, ticker for new Hall of Fame entries, an ambient particle laye
 sparkles; click bursts), animated battle replay, egg hatching and confetti. Effects can be switched off with
 the "effects" button and are disabled by `prefers-reduced-motion`.
 
+On phones (<= 700px wide) the frameset becomes one column with a bottom tab bar (home / ranking / lineages /
+hall / more), one view at a time, compact slime cards (collapsible pedigree), stacked forms with 16px inputs
+and 44px touch targets, and a lighter particle layer.
+
 ## Languages
 
 Korean (default) and English, switchable in the top right; server errors are codes translated by the client.

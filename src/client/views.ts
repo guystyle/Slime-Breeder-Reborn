@@ -16,25 +16,31 @@ export const fmtDate = (iso: string) => {
 
 export const kindLabel = (k: Kind) => t(`kind.${k}` as const);
 
-/** Slime header line: rank, name, generation, seeds, children, record, best rank, points. */
+export const mobileQuery = () => matchMedia('(max-width: 700px)');
+export const isMobile = () => mobileQuery().matches;
+
+/** Slime header: rank, name and form on the first line, seeds / children / record / points as small chips below. */
 export function slimeHeader(s: SlimeView, opts: { versus?: boolean } = {}): HTMLElement {
-  const title = h('div', { class: 'head' });
-  if (opts.versus) title.append(span('yellow', `${t('card.versus')} `), `(${t('card.rank', { n: s.rank ?? '-' })}) `);
-  else title.append(h('b', {}, (s.rank ? t('card.rank', { n: s.rank }) : t('card.unranked')) + ' '));
-  title.append(
+  const main = h('div', { class: 'head-main' });
+  if (opts.versus) main.append(span('yellow', `${t('card.versus')} `), `(${t('card.rank', { n: s.rank ?? '-' })}) `);
+  else main.append(h('b', {}, (s.rank ? t('card.rank', { n: s.rank }) : t('card.unranked')) + ' '));
+  main.append(
     h('b', { class: `pink${s.rank === 1 ? ' champ' : ''}` }, s.name),
     h('span', { class: 'sub' }, String(s.gen)),
     s.defenses > 0 ? span('yellow sub', ` ${'★'.repeat(Math.min(5, s.defenses))}${s.defenses}`) : '',
     s.kind !== 'normal' ? span(`badge ${s.kind}`, kindLabel(s.kind)) : '',
-    ' ',
-    s.seeds > 0 ? span('yellow', t('card.seeds', { n: s.seeds })) : t('card.seeds', { n: 0 }),
-    ` ${t('card.children', { n: s.children })} ${t('card.record', { w: s.wins, l: s.losses })}`,
-    s.bestRank ? ` ${t('card.best', { n: s.bestRank })}` : '',
-    ' ',
-    span('yellow pts', String(s.points)),
-    h('small', {}, t('card.pts')),
   );
-  return title;
+  const chip = (...kids: (Node | string)[]) => h('span', { class: 'chip' }, ...kids);
+  const sub = h(
+    'div',
+    { class: 'head-sub' },
+    chip(s.seeds > 0 ? span('yellow', t('card.seeds', { n: s.seeds })) : t('card.seeds', { n: 0 })),
+    chip(t('card.children', { n: s.children })),
+    chip(t('card.record', { w: s.wins, l: s.losses })),
+    s.bestRank ? chip(t('card.best', { n: s.bestRank })) : '',
+    chip(span('yellow pts', String(s.points)), h('small', {}, t('card.pts'))),
+  );
+  return h('div', { class: 'head' }, main, sub);
 }
 
 const lineLink = (l: Lin | undefined, cls = '') => {
@@ -88,6 +94,15 @@ export function slimeCard(s: SlimeView, opts: { versus?: boolean; id?: string; s
   const sh = s.shown;
   const root = h('div', { class: 'slime-card' + (opts.orange ? ' orange' : ''), ...(opts.id ? { id: opts.id } : {}) });
   root.append(slimeHeader(s, opts));
+  const cells: ['HP' | 'STM' | 'STR' | 'DEX' | 'AGL' | 'SPD', number][] = [
+    ['HP', sh.hp],
+    ['STM', sh.stm],
+    ['STR', sh.str],
+    ['DEX', sh.dex],
+    ['AGL', sh.agl],
+    ['SPD', sh.spd],
+  ];
+  const ped = h('details', { class: 'ped-details', ...(isMobile() ? {} : { open: true }) }, h('summary', {}, t('ped.title')), pedigree(s));
   root.append(
     h(
       'div',
@@ -95,20 +110,16 @@ export function slimeCard(s: SlimeView, opts: { versus?: boolean; id?: string; s
       h(
         'div',
         { class: 'box' },
-        sprite(s.color, s.px, s.kind),
+        sprite(s.color, isMobile() ? Math.min(s.px, 104) : s.px, s.kind),
         h('div', { class: 'small' }, t('card.weight', { n: s.stats.weight })),
         s.lineage[3].no ? h('div', { class: 'small' }, lineLink(s.lineage[3], 'own-line')) : '',
       ),
       h(
         'div',
         { class: 'info' },
-        h(
-          'table',
-          { class: 'stats' },
-          h('tr', {}, h('th', {}, t('card.gen', { n: s.gen, date: fmtDate(s.born) })), ...(['HP', 'STM', 'STR', 'DEX', 'AGL', 'SPD'] as const).map((k) => h('th', {}, t(`stat.${k}` as const)))),
-          h('tr', {}, h('th', {}, t('card.owner', { x: s.owner })), ...[sh.hp, sh.stm, sh.str, sh.dex, sh.agl, sh.spd].map((n) => h('th', {}, String(n)))),
-        ),
-        pedigree(s),
+        h('div', { class: 'meta small' }, `${t('card.gen', { n: s.gen, date: fmtDate(s.born) })} · ${t('card.owner', { x: s.owner })}`),
+        h('div', { class: 'statgrid' }, ...cells.map(([k, v]) => h('div', { class: 'cell' }, h('span', { class: 'k' }, t(`stat.${k}` as const)), h('span', { class: 'v' }, String(v))))),
+        ped,
         opts.showNix ? h('div', { class: 'small nixfit' }, `${t('born.nix')} ${s.nix}`) : '',
       ),
     ),

@@ -130,8 +130,9 @@ export function startAmbient(): void {
   const parts: P[] = [];
   const mouse = { x: -999, y: -999, lx: -999, ly: -999 };
 
+  const small = matchMedia('(max-width: 700px)').matches; // fewer particles and a cheaper canvas on phones
   const resize = () => {
-    const dpr = Math.min(2, devicePixelRatio || 1);
+    const dpr = Math.min(small ? 1.5 : 2, devicePixelRatio || 1);
     w = innerWidth;
     hgt = innerHeight;
     canvas.width = w * dpr;
@@ -144,8 +145,8 @@ export function startAmbient(): void {
   addEventListener('resize', resize);
 
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
-  for (let i = 0; i < 26; i++) parts.push({ x: rnd(0, w), y: rnd(0, hgt), vx: rnd(-6, 6), vy: rnd(-22, -6), r: rnd(6, 26), hue: rnd(150, 330), life: Infinity, max: 1, kind: 'bubble', phase: rnd(0, 6.28) });
-  for (let i = 0; i < 46; i++) parts.push({ x: rnd(0, w), y: rnd(0, hgt), vx: 0, vy: 0, r: rnd(1, 2.6), hue: rnd(40, 300), life: Infinity, max: 1, kind: 'star', phase: rnd(0, 6.28) });
+  for (let i = 0; i < (small ? 12 : 26); i++) parts.push({ x: rnd(0, w), y: rnd(0, hgt), vx: rnd(-6, 6), vy: rnd(-22, -6), r: rnd(6, 26), hue: rnd(150, 330), life: Infinity, max: 1, kind: 'bubble', phase: rnd(0, 6.28) });
+  for (let i = 0; i < (small ? 22 : 46); i++) parts.push({ x: rnd(0, w), y: rnd(0, hgt), vx: 0, vy: 0, r: rnd(1, 2.6), hue: rnd(40, 300), life: Infinity, max: 1, kind: 'star', phase: rnd(0, 6.28) });
 
   const spark = (x: number, y: number, n = 1, speed = 40) => {
     for (let i = 0; i < n; i++) {
