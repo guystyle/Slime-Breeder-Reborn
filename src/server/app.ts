@@ -64,6 +64,12 @@ export function createApp(getGame: () => Promise<Game> = sharedGame): Hono {
     }
   };
 
+  // API answers are never cached (phones and proxies would otherwise show stale rankings)
+  app.use('/api/*', async (c, next) => {
+    await next();
+    c.header('Cache-Control', 'no-store');
+  });
+
   app.onError((e, c) => {
     if (e instanceof GameError) return c.json({ ok: false, error: e.message, code: e.code, params: e.params }, 400);
     console.error(e);

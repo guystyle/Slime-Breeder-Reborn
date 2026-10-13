@@ -83,3 +83,11 @@ describe('play interval setting', () => {
     await expect(g.enter('quick', 'pw')).resolves.toBeTruthy();
   });
 });
+
+describe('api caching', () => {
+  it('answers are marked no-store so phones never show a stale ranking', async () => {
+    const { g } = await makeGame();
+    const res = await createApp(async () => g).request('/api/rank');
+    expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+});

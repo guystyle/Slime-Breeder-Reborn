@@ -24,14 +24,29 @@ export class ApiError extends Error {
 }
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = (await res.json()) as T & { ok?: boolean; error?: string; code?: string; params?: Record<string, string | number>; detail?: string };
-  if (!res.ok || data.ok === false) throw new ApiError(data.code ?? 'server', data.params ?? {}, data.error ?? 'Request failed', data.detail);
-  return data;
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (e) {
+    // offline, blocked, or the connection dropped
+    throw new ApiError('server', {}, 'Network error', `network: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  // Read the text first: a platform error page (timeout, crash) is not JSON, and Safari reports a failed
+  // res.json() only as "The string did not match the expected pattern", which hides what really happened.
+  const text = await res.text();
+  let data: (T & { ok?: boolean; error?: string; code?: string; params?: Record<string, string | number>; detail?: string }) | null = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 140);
+    throw new ApiError('server', {}, 'Unexpected response', `HTTP ${res.status}${snippet ? `: ${snippet}` : ''}`);
+  }
+  if (!res.ok || data?.ok === false) throw new ApiError(data?.code ?? 'server', data?.params ?? {}, data?.error ?? 'Request failed', data?.detail);
+  return data as T;
 }
 
 export const api = {

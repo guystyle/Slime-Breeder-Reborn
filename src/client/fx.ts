@@ -102,6 +102,9 @@ export async function hatch(host: HTMLElement): Promise<void> {
   confetti(host, 24);
 }
 
+/** CSS colour with plain decimals: tiny floats print as 1e-7, which some browsers reject in canvas gradients. */
+const hsla = (h: number, sat: number, light: number, a: number) => `hsla(${h.toFixed(1)},${sat}%,${light}%,${Math.min(1, Math.max(0, a)).toFixed(3)})`;
+
 // ---------------------------------------------------------------------------
 // Ambient particles: drifting bubbles, twinkling stars, cursor sparkles.
 // One fixed canvas behind the page; cheap enough to leave running.
@@ -210,18 +213,18 @@ export function startAmbient(): void {
         if (p.x < -40) p.x = w + 30;
         if (p.x > w + 40) p.x = -30;
         const g = ctx.createRadialGradient(p.x - p.r * 0.3, p.y - p.r * 0.3, p.r * 0.1, p.x, p.y, p.r);
-        g.addColorStop(0, `hsla(${p.hue},100%,90%,0.28)`);
-        g.addColorStop(1, `hsla(${p.hue},100%,60%,0.05)`);
+        g.addColorStop(0, hsla(p.hue, 100, 90, 0.28));
+        g.addColorStop(1, hsla(p.hue, 100, 60, 0.05));
         ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, 6.283);
         ctx.fill();
-        ctx.strokeStyle = `hsla(${p.hue},100%,85%,0.25)`;
+        ctx.strokeStyle = hsla(p.hue, 100, 85, 0.25);
         ctx.lineWidth = 1;
         ctx.stroke();
       } else if (p.kind === 'star') {
         const a = 0.2 + 0.6 * Math.abs(Math.sin(p.phase * 1.2));
-        ctx.strokeStyle = `hsla(${p.hue},100%,85%,${a})`;
+        ctx.strokeStyle = hsla(p.hue, 100, 85, a);
         ctx.lineWidth = 1;
         star(p.x, p.y, p.r);
       } else {
@@ -234,7 +237,7 @@ export function startAmbient(): void {
         p.x += p.vx * dt;
         p.y += p.vy * dt;
         const a = Math.max(0, p.life / p.max);
-        ctx.strokeStyle = `hsla(${p.hue},100%,75%,${a})`;
+        ctx.strokeStyle = hsla(p.hue, 100, 75, a);
         ctx.lineWidth = 1.5;
         star(p.x, p.y, p.r * a + 1);
       }

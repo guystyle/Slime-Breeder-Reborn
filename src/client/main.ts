@@ -426,6 +426,24 @@ window.addEventListener('hashchange', () => {
 });
 mobileQuery().addEventListener('change', renderAll);
 
+/** Show unexpected script errors on screen so they can be reported (a phone has no console). */
+function installErrorReporter() {
+  const seen = new Set<string>();
+  const report = (msg: string, where: string) => {
+    const text = `${msg} ${where}`.trim();
+    if (seen.has(text) || seen.size > 5) return;
+    seen.add(text);
+    const box = h('div', { class: 'jserror', role: 'alert' }, '⚠ ', text, ' ', h('button', { type: 'button', class: 'mini', onclick: () => box.remove() }, '×'));
+    document.body.append(box);
+  };
+  addEventListener('error', (e) => report(e.message, e.filename ? `(${e.filename.split('/').pop()}:${e.lineno}:${e.colno})` : ''));
+  addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    report(r instanceof Error ? r.message : String(r), r instanceof ApiError ? '' : '(promise)');
+  });
+}
+
 document.documentElement.lang = getLang();
+installErrorReporter();
 startAmbient();
 void loadSettings().finally(renderAll);

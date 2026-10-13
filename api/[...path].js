@@ -12954,6 +12954,10 @@ function createApp(getGame = sharedGame) {
       throw new GameError("bad-request");
     }
   };
+  app2.use("/api/*", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "no-store");
+  });
   app2.onError((e, c) => {
     if (e instanceof GameError) return c.json({ ok: false, error: e.message, code: e.code, params: e.params }, 400);
     console.error(e);

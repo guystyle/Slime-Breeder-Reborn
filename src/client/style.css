@@ -340,3 +340,5 @@ details.comments > summary { cursor: pointer; color: #cfc; margin: 6px 0; user-s
   footer { text-align: center; }
   .marquee-inner { font-size: 0.85em; }
 }
+
+.jserror { position: fixed; left: 8px; right: 8px; top: 8px; z-index: 100; background: #400; color: #fcc; border: 1px solid #f66; padding: 6px 10px; font-size: 13px; word-break: break-all; }
