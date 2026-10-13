@@ -299,8 +299,13 @@ details.comments > summary { cursor: pointer; color: #cfc; margin: 6px 0; user-s
 
   /* slime cards */
   .slime { flex-direction: row; }
-  .slime .box { min-width: 0; width: 136px; padding: 10px 4px; flex: none; justify-content: flex-start; gap: 2px; }
-  .slime .info { padding: 5px 6px 8px; overflow-y: hidden; }
+  .slime { margin-bottom: 0; }
+  .slime .box { min-width: 0; width: 136px; padding: 8px 4px; flex: none; justify-content: center; gap: 3px; }
+  .slime .info { padding: 6px 8px; overflow-y: hidden; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+  .slime .info .meta { line-height: 1.35; }
+  .ped-details.full { margin: 0 0 6px; padding: 4px 8px 6px; border: 1px solid lightblue; border-top: 1px dashed #4a6a8a; background-color: #001029; background-image: var(--bg-strip); overflow-x: auto; }
+  .ped-details.full .ped { width: 100%; }
+  .ped td:last-child a { display: block; }
   .nixfit { padding-bottom: 2px; overflow-wrap: anywhere; letter-spacing: 1px; }
   .statgrid { grid-template-columns: repeat(3, 1fr); }
   .statgrid .cell { border-top: 1px solid #889; }

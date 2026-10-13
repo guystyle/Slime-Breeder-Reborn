@@ -104,7 +104,9 @@ export function slimeCard(s: SlimeView, opts: { versus?: boolean; id?: string; s
     ['AGL', sh.agl],
     ['SPD', sh.spd],
   ];
-  const ped = h('details', { class: 'ped-details', ...(isMobile() ? {} : { open: true }) }, h('summary', {}, t('ped.title')), pedigree(s));
+  // On a phone the pedigree table needs the whole card width, so it sits under the picture + stats instead of inside the narrow info column.
+  const phone = isMobile();
+  const ped = h('details', { class: `ped-details${phone ? ' full' : ''}`, ...(phone ? {} : { open: true }) }, h('summary', {}, t('ped.title')), pedigree(s));
   root.append(
     h(
       'div',
@@ -121,11 +123,12 @@ export function slimeCard(s: SlimeView, opts: { versus?: boolean; id?: string; s
         { class: 'info' },
         h('div', { class: 'meta small' }, `${t('card.gen', { n: s.gen, date: fmtDate(s.born) })} · ${t('card.owner', { x: s.owner })}`),
         h('div', { class: 'statgrid' }, ...cells.map(([k, v]) => h('div', { class: 'cell' }, h('span', { class: 'k' }, t(`stat.${k}` as const)), h('span', { class: 'v' }, String(v))))),
-        ped,
+        phone ? '' : ped,
         opts.showNix ? h('div', { class: 'small nixfit' }, `${t('born.nix')} ${s.nix}`) : '',
       ),
     ),
   );
+  if (phone) root.append(ped);
   return root;
 }
 
